@@ -24,8 +24,15 @@
 
 package gophertun
 
-type TunTapConfig struct {
-	NameHint              string
-	AllowNameSuffix       bool
-	PreferredNativeFormat PayloadFormat
+import (
+	"math/rand"
+	"net"
+)
+
+func generateMACAddress() net.HardwareAddr {
+	result := make(net.HardwareAddr, 6)
+	_, _ = rand.Read(result)
+	result[0] &= 0xfe
+	result[0] |= 0x02
+	return result
 }

@@ -43,11 +43,15 @@ func (t *TunTapImpl) GetMTU() (int, error) {
 	return DefaultMTU, UnsupportedFeatureError
 }
 
-func (t *TunTapImpl) GetNativeType() PayloadType {
-	return PayloadUnknown
+func (t *TunTapImpl) GetNativeFormat() PayloadFormat {
+	return FormatUnknown
 }
 
-func (t *TunTapImpl) Open(convertType PayloadType) error {
+func (t *TunTapImpl) GetOutputFormat() PayloadFormat {
+	return FormatUnknown
+}
+
+func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 	return UnsupportedFeatureError
 }
 

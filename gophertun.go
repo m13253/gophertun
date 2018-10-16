@@ -32,8 +32,9 @@ import (
 type Tunnel interface {
 	Close() error
 	GetMTU() (int, error)
-	GetNativeType() PayloadType
-	Open(convertType PayloadType) error
+	GetNativeFormat() PayloadFormat
+	GetOutputFormat() PayloadFormat
+	Open(outputFormat PayloadFormat) error
 	RawFile() *os.File
 	Read() (*Packet, error)
 	SetMTU(mtu int) error
@@ -45,17 +46,26 @@ type TunnelConfig interface {
 }
 
 type Packet struct {
-	Payload       []byte
-	Proto         uint16
-	ExtraMetadata []byte
+	Format  PayloadFormat
+	Proto   EtherType
+	Payload []byte
+	Extra   []byte
 }
 
-type PayloadType int
+type PayloadFormat int
 
 const (
-	PayloadUnknown PayloadType = iota
-	PayloadIP
-	PayloadEthernet
+	FormatUnknown PayloadFormat = iota
+	FormatIP
+	FormatEthernet
+)
+
+type EtherType uint16
+
+const (
+	EtherTypeLoop EtherType = 0x0060
+	EtherTypeIPv4 EtherType = 0x0800
+	EtherTypeIPv6 EtherType = 0x86dd
 )
 
 const (
@@ -64,5 +74,6 @@ const (
 )
 
 var (
-	UnsupportedFeatureError = errors.New("gophertun: feature unsupported on this platform")
+	UnsupportedFeatureError  = errors.New("gophertun: feature unsupported on this platform")
+	UnsupportedProtocolError = errors.New("gophertun: protocol unsupported")
 )

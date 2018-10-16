@@ -22,10 +22,34 @@
   SOFTWARE.
 */
 
-package gophertun
+package main
 
-type TunTapConfig struct {
-	NameHint              string
-	AllowNameSuffix       bool
-	PreferredNativeFormat PayloadFormat
+import (
+	"fmt"
+	"log"
+
+	gophertun "../.."
+)
+
+func main() {
+	c := &gophertun.TunTapConfig{
+		AllowNameSuffix:       true,
+		PreferredNativeFormat: gophertun.FormatEthernet,
+	}
+	t, err := c.Create()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer t.Close()
+	err = t.Open(gophertun.FormatEthernet)
+	for {
+		p, err := t.Read()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if p == nil {
+			break
+		}
+		fmt.Printf("Proto: %04x Payload: %x Extra: %x\n", p.Proto, p.Payload, p.Extra)
+	}
 }

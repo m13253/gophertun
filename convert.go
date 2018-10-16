@@ -24,8 +24,48 @@
 
 package gophertun
 
-type TunTapConfig struct {
-	NameHint              string
-	AllowNameSuffix       bool
-	PreferredNativeFormat PayloadFormat
+import (
+	"errors"
+	"net"
+)
+
+func (p *Packet) ConvertTo(outputFormat PayloadFormat, hwAddr net.HardwareAddr) (*Packet, error) {
+	if p == nil {
+		return nil, nil
+	}
+	switch outputFormat {
+	case FormatIP:
+		switch p.Format {
+		case FormatIP:
+			return p, nil
+		case FormatEthernet:
+			if len(p.Payload) < 14 {
+				return nil, errors.New("gophertun: invalid Ethernet frame")
+			}
+			etherType := (EtherType(p.Payload[12]) << 8) | EtherType(p.Payload[13])
+			return &Packet{
+				Format:  FormatIP,
+				Proto:   etherType,
+				Payload: p.Payload[14:],
+				Extra:   p.Extra,
+			}, nil
+		}
+	case FormatEthernet:
+		switch p.Format {
+		case FormatIP:
+			frame := make([]byte, len(p.Payload)+14)
+			copy(frame[:6], hwAddr)
+			copy(frame[6:14], []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, byte(p.Proto >> 8), byte(p.Proto)})
+			copy(frame[14:], p.Payload)
+			return &Packet{
+				Format:  FormatEthernet,
+				Proto:   EtherTypeLoop,
+				Payload: frame,
+				Extra:   p.Extra,
+			}, nil
+		case FormatEthernet:
+			return p, nil
+		}
+	}
+	return nil, UnsupportedProtocolError
 }

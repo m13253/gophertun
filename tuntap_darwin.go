@@ -25,15 +25,17 @@
 package gophertun
 
 import (
-	"errors"
+	"encoding/binary"
+	"net"
 	"os"
 	"syscall"
 	"unsafe"
 )
 
 type TunTapImpl struct {
-	f           *os.File
-	convertType PayloadType
+	f            *os.File
+	outputFormat PayloadFormat
+	hwAddr       net.HardwareAddr
 }
 
 const (
@@ -101,19 +103,24 @@ func (t *TunTapImpl) GetMTU() (int, error) {
 	return DefaultMTU, nil
 }
 
-func (t *TunTapImpl) GetNativeType() PayloadType {
-	return PayloadIP
+func (t *TunTapImpl) GetNativeFormat() PayloadFormat {
+	return FormatIP
 }
 
-func (t *TunTapImpl) Open(convertType PayloadType) error {
-	switch convertType {
-	case PayloadUnknown, PayloadIP:
-		t.convertType = PayloadIP
-	case PayloadEthernet:
-		t.convertType = PayloadEthernet
+func (t *TunTapImpl) GetOutputFormat() PayloadFormat {
+	return t.outputFormat
+}
+
+func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
+	switch outputFormat {
+	case FormatUnknown, FormatIP:
+		t.outputFormat = FormatIP
+	case FormatEthernet:
+		t.outputFormat = FormatEthernet
 	default:
 		return UnsupportedFeatureError
 	}
+	t.hwAddr = generateMACAddress()
 	return nil
 }
 
@@ -122,50 +129,36 @@ func (t *TunTapImpl) RawFile() *os.File {
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {
-	switch t.convertType {
-	case PayloadIP:
-		buf := make([]byte, DefaultMRU)
-		n, err := t.f.Read(buf[:])
-		if err != nil {
-			return nil, err
-		}
-		if n == 0 {
-			return nil, nil
-		}
-		p := &Packet{
-			Payload: buf[:n],
-		}
-		ipVersion := buf[0] >> 4
-		switch ipVersion {
-		case 4:
-			p.Proto = 0x0800
-		case 6:
-			p.Proto = 0x86dd
-		}
-		return p, nil
-	case PayloadEthernet:
-		buf := make([]byte, DefaultMRU+14)
-		n, err := t.f.Read(buf[14:])
-		if err != nil {
-			return nil, err
-		}
-		if n == 0 {
-			return nil, nil
-		}
-		p := &Packet{
-			Payload: buf[:n+14],
-		}
-		ipVersion := buf[14] >> 4
-		switch ipVersion {
-		case 4:
-			p.Proto = 0x0800
-		case 6:
-			p.Proto = 0x86dd
-		}
-		return p, nil
-	default:
-		panic("gophertun: unsupported payload type")
+retry:
+	buf := make([]byte, DefaultMRU+4)
+	n, err := t.f.Read(buf[:])
+	if err != nil {
+		return nil, err
 	}
+	if n == 0 {
+		return nil, nil
+	}
+	etherType := EtherType(0)
+	switch binary.BigEndian.Uint32(buf[:4]) {
+	case syscall.AF_INET:
+		etherType = EtherTypeIPv4
+	case syscall.AF_INET6:
+		etherType = EtherTypeIPv6
+	}
+	packet := &Packet{
+		Format:  FormatIP,
+		Proto:   etherType,
+		Payload: buf[4:n],
+		Extra:   buf[:4],
+	}
+	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
+	if err != nil {
+		return nil, err
+	}
+	if packet == nil {
+		goto retry
+	}
+	return packet, nil
 }
 
 func (t *TunTapImpl) SetMTU(mtu int) error {
@@ -173,28 +166,26 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 }
 
 func (t *TunTapImpl) Write(packet *Packet) error {
-	switch t.convertType {
-	case PayloadIP:
-		_, err := t.f.Write(packet.Payload)
-		if err != nil {
-			return err
-		}
-	case PayloadEthernet:
-		if len(packet.Payload) < 14 {
-			return errors.New("gophertun: incomplete ethernet frame")
-		}
-		etherType := (uint16(packet.Payload[12]) << 8) | uint16(packet.Payload[13])
-		switch etherType {
-		case 0x0800, 0x86dd: // IPv4, IPv6
-			_, err := t.f.Write(packet.Payload[14:])
-			if err != nil {
-				return err
-			}
-		default:
-			return nil
-		}
+	packet, err := packet.ConvertTo(FormatIP, nil)
+	if err != nil {
+		return err
+	}
+	if packet == nil {
+		return nil
+	}
+	buf := make([]byte, len(packet.Payload)+4)
+	switch packet.Proto {
+	case EtherTypeIPv4:
+		binary.BigEndian.PutUint32(buf[:4], syscall.AF_INET)
+	case EtherTypeIPv6:
+		binary.BigEndian.PutUint32(buf[:4], syscall.AF_INET6)
 	default:
-		panic("gophertun: unsupported payload type")
+		return UnsupportedProtocolError
+	}
+	copy(buf[4:], packet.Payload)
+	_, err = t.f.Write(buf)
+	if err != nil {
+		return err
 	}
 	return nil
 }
