@@ -129,8 +129,8 @@ func (t *TunTapImpl) MTU() (int, error) {
 }
 
 func tuntapName(fd uintptr) (string, error) {
-	var ifName [256]byte
-	ifNameLen := uintptr(256)
+	var ifName [15]byte // 15 is enough for "utun4294967295"
+	ifNameLen := uintptr(len(ifName))
 	r1, _, err := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd, _SYSPROTO_CONTROL, _UTUN_OPT_IFNAME, uintptr(unsafe.Pointer(&ifName[0])), uintptr(unsafe.Pointer(&ifNameLen)), 0)
 	if r1 != 0 {
 		return "", err
