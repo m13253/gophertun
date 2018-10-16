@@ -83,9 +83,9 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		sc_unit:    0,
 	}
 
-	var utunID uint32
+	var utunID int32
 	if n, _ := fmt.Sscanf(c.NameHint, "utun%d", &utunID); n == 1 {
-		sc.sc_unit = utunID + 1
+		sc.sc_unit = uint32(utunID + 1)
 	}
 
 	r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
@@ -129,7 +129,7 @@ func (t *TunTapImpl) MTU() (int, error) {
 }
 
 func tuntapName(fd uintptr) (string, error) {
-	var ifName [15]byte // 15 is enough for "utun4294967295"
+	var ifName [16]byte // 16 is enough for "utun-2147483648"
 	ifNameLen := uintptr(len(ifName))
 	r1, _, err := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd, _SYSPROTO_CONTROL, _UTUN_OPT_IFNAME, uintptr(unsafe.Pointer(&ifName[0])), uintptr(unsafe.Pointer(&ifNameLen)), 0)
 	if r1 != 0 {
