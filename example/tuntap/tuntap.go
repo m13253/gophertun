@@ -27,6 +27,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
 	gophertun "../.."
 )
@@ -35,6 +36,9 @@ func main() {
 	c := &gophertun.TunTapConfig{
 		AllowNameSuffix:       true,
 		PreferredNativeFormat: gophertun.FormatEthernet,
+	}
+	if len(os.Args) >= 2 {
+		c.NameHint = os.Args[1]
 	}
 	t, err := c.Create()
 	if err != nil {

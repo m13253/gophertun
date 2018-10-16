@@ -26,6 +26,7 @@ package gophertun
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"os"
 	"syscall"
@@ -82,9 +83,22 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		sc_unit:    0,
 	}
 
+	var utunID uint32
+	if n, _ := fmt.Sscanf(c.NameHint, "utun%d", &utunID); n == 1 {
+		sc.sc_unit = utunID + 1
+	}
+
 	r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
 	if r1 != 0 {
-		return nil, err
+		if errno, ok := err.(syscall.Errno); ok && errno == syscall.EBUSY && c.AllowNameSuffix {
+			sc.sc_unit = 0
+			r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
+			if r1 != 0 {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 
 	name, err := tuntapName(uintptr(fd))
