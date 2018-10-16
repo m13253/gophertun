@@ -92,6 +92,11 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		return nil, err
 	}
 
+	err = syscall.SetNonblock(fd, true)
+	if err != nil {
+		return nil, err
+	}
+
 	f := os.NewFile(uintptr(fd), "/dev/net/"+name)
 
 	t := &TunTapImpl{
