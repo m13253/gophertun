@@ -42,6 +42,7 @@ const (
 	_PF_SYSTEM        = syscall.AF_SYSTEM
 	_SYSPROTO_CONTROL = 2
 	_AF_SYS_CONTROL   = 2
+	_UTUN_OPT_IFNAME  = 2
 )
 
 type ctl_info struct {
@@ -69,7 +70,7 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	info := &ctl_info{}
 	copy(info.ctl_name[:], "com.apple.net.utun_control")
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), _CTLIOCGINFO, uintptr(unsafe.Pointer(info)))
-	if r1 == ^uintptr(0) {
+	if r1 != 0 {
 		return nil, err
 	}
 
@@ -82,11 +83,16 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	}
 
 	r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
-	if r1 == ^uintptr(0) {
+	if r1 != 0 {
 		return nil, err
 	}
 
-	f := os.NewFile(uintptr(fd), "")
+	name, err := tuntapName(uintptr(fd))
+	if err != nil {
+		return nil, err
+	}
+
+	f := os.NewFile(uintptr(fd), "/dev/net/"+name)
 
 	t := &TunTapImpl{
 		f: f,
@@ -99,16 +105,26 @@ func (t *TunTapImpl) Close() error {
 	return t.f.Close()
 }
 
-func (t *TunTapImpl) GetMTU() (int, error) {
+func (t *TunTapImpl) MTU() (int, error) {
 	return DefaultMTU, nil
 }
 
-func (t *TunTapImpl) GetNativeFormat() PayloadFormat {
-	return FormatIP
+func tuntapName(fd uintptr) (string, error) {
+	var ifName [256]byte
+	ifNameLen := uintptr(256)
+	r1, _, err := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd, _SYSPROTO_CONTROL, _UTUN_OPT_IFNAME, uintptr(unsafe.Pointer(&ifName[0])), uintptr(unsafe.Pointer(&ifNameLen)), 0)
+	if r1 != 0 {
+		return "", err
+	}
+	return string(ifName[:ifNameLen-1]), nil
 }
 
-func (t *TunTapImpl) GetOutputFormat() PayloadFormat {
-	return t.outputFormat
+func (t *TunTapImpl) Name() (string, error) {
+	return tuntapName(t.f.Fd())
+}
+
+func (t *TunTapImpl) NativeFormat() PayloadFormat {
+	return FormatIP
 }
 
 func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
@@ -122,6 +138,10 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 	}
 	t.hwAddr = generateMACAddress()
 	return nil
+}
+
+func (t *TunTapImpl) OutputFormat() PayloadFormat {
+	return t.outputFormat
 }
 
 func (t *TunTapImpl) RawFile() *os.File {

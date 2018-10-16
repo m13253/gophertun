@@ -41,6 +41,11 @@ func main() {
 		log.Fatalln(err)
 	}
 	defer t.Close()
+	name, err := t.Name()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Printf("Device: %s\n", name)
 	err = t.Open(gophertun.FormatEthernet)
 	for {
 		p, err := t.Read()

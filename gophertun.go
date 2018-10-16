@@ -31,10 +31,11 @@ import (
 
 type Tunnel interface {
 	Close() error
-	GetMTU() (int, error)
-	GetNativeFormat() PayloadFormat
-	GetOutputFormat() PayloadFormat
+	MTU() (int, error)
+	Name() (string, error)
+	NativeFormat() PayloadFormat
 	Open(outputFormat PayloadFormat) error
+	OutputFormat() PayloadFormat
 	RawFile() *os.File
 	Read() (*Packet, error)
 	SetMTU(mtu int) error

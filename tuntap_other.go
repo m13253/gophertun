@@ -39,20 +39,24 @@ func (t *TunTapImpl) Close() error {
 	return UnsupportedFeatureError
 }
 
-func (t *TunTapImpl) GetMTU() (int, error) {
+func (t *TunTapImpl) MTU() (int, error) {
 	return DefaultMTU, UnsupportedFeatureError
 }
 
-func (t *TunTapImpl) GetNativeFormat() PayloadFormat {
-	return FormatUnknown
+func (t *TunTapImpl) Name() (string, error) {
+	return "", UnsupportedFeatureError
 }
 
-func (t *TunTapImpl) GetOutputFormat() PayloadFormat {
+func (t *TunTapImpl) NativeFormat() PayloadFormat {
 	return FormatUnknown
 }
 
 func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 	return UnsupportedFeatureError
+}
+
+func (t *TunTapImpl) OutputFormat() PayloadFormat {
+	return FormatUnknown
 }
 
 func (t *TunTapImpl) RawFile() *os.File {
