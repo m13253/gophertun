@@ -1,4 +1,4 @@
-// +build darwin
+// +build linux
 
 /*
   MIT License
@@ -27,33 +27,31 @@
 package gophertun
 
 import (
+	"bytes"
 	"encoding/binary"
-	"fmt"
 	"net"
 	"os"
+	"strings"
 	"syscall"
 	"unsafe"
 )
 
 type TunTapImpl struct {
 	f            *os.File
+	name         string
+	nativeFormat PayloadFormat
 	outputFormat PayloadFormat
 	hwAddr       net.HardwareAddr
 }
 
 const (
-	_PF_SYSTEM        = syscall.AF_SYSTEM
-	_SYSPROTO_CONTROL = 2
-	_AF_SYS_CONTROL   = 2
-	_UTUN_OPT_IFNAME  = 2
-	_IF_NAMESIZE      = 16
+	_IF_NAMESIZE     = 16
+	_IFF_TUN         = 0x0001
+	_IFF_TAP         = 0x0002
+	_IFF_MULTI_QUEUE = 0x0100
 )
 
 type (
-	ctl_info struct {
-		ctl_id   uint32
-		ctl_name [96]byte
-	}
 	ifreq_addr struct {
 		ifr_name  [_IF_NAMESIZE]byte
 		ifru_addr syscall.RawSockaddr
@@ -63,78 +61,47 @@ type (
 		ifru_mtu int32
 		_        [28 - _IF_NAMESIZE]byte
 	}
+	ifreq_flags struct {
+		ifr_name   [_IF_NAMESIZE]byte
+		ifru_flags int16
+	}
 )
 
 var (
-	_CTLIOCGINFO = _IOWR('N', 3, unsafe.Sizeof(ctl_info{}))
-	_SIOCGIFMTU  = _IOWR('i', 51, unsafe.Sizeof(ifreq_mtu{}))
-	_SIOCSIFMTU  = _IOW('i', 52, unsafe.Sizeof(ifreq_mtu{}))
+	_TUNSETIFF          = _IOW('T', 202, 4)
+	_SIOCGIFMTU uintptr = 0x8921
+	_SIOCSIFMTU uintptr = 0x8922
 )
 
-type sockaddr_ctl struct {
-	sc_len      uint8
-	sc_family   uint8
-	ss_sysaddr  uint16
-	sc_id       uint32
-	sc_unit     uint32
-	sc_reserved [5]uint32
-}
-
 func (c *TunTapConfig) Create() (Tunnel, error) {
-	fd, err := syscall.Socket(syscall.AF_SYSTEM, syscall.SOCK_DGRAM, _SYSPROTO_CONTROL)
+	f, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0666)
 	if err != nil {
 		return nil, err
 	}
-
-	info := &ctl_info{}
-	copy(info.ctl_name[:], "com.apple.net.utun_control")
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), _CTLIOCGINFO, uintptr(unsafe.Pointer(info)))
+	ifr := &ifreq_flags{}
+	if c.AllowNameSuffix && strings.HasSuffix(c.NameHint, "0") {
+		copy(ifr.ifr_name[:], c.NameHint[:len(c.NameHint)-1][:_IF_NAMESIZE-2]+"%i")
+	} else {
+		copy(ifr.ifr_name[:], c.NameHint)
+	}
+	switch c.PreferredNativeFormat {
+	case FormatIP:
+		ifr.ifru_flags = _IFF_TUN
+	case FormatEthernet:
+		ifr.ifru_flags = _IFF_TUN
+	default:
+		return nil, UnsupportedProtocolError
+	}
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), _TUNSETIFF, uintptr(unsafe.Pointer(ifr)))
 	if r1 != 0 {
 		return nil, err
 	}
-
-	sc := &sockaddr_ctl{
-		sc_len:     uint8(unsafe.Sizeof(sockaddr_ctl{})),
-		sc_family:  syscall.AF_SYSTEM,
-		ss_sysaddr: _AF_SYS_CONTROL,
-		sc_id:      info.ctl_id,
-		sc_unit:    0,
-	}
-
-	var utunID int32
-	if n, _ := fmt.Sscanf(c.NameHint, "utun%d", &utunID); n == 1 {
-		sc.sc_unit = uint32(utunID + 1)
-	}
-
-	r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
-	if r1 != 0 {
-		if errno, ok := err.(syscall.Errno); ok && errno == syscall.EBUSY && c.AllowNameSuffix {
-			sc.sc_unit = 0
-			r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
-			if r1 != 0 {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
-
-	name, err := tuntapName(uintptr(fd))
-	if err != nil {
-		return nil, err
-	}
-
-	err = syscall.SetNonblock(fd, true)
-	if err != nil {
-		return nil, err
-	}
-
-	f := os.NewFile(uintptr(fd), "/dev/net/"+name)
-
+	name := string(bytes.SplitN(ifr.ifr_name[:], []byte{0}, 2)[0])
 	t := &TunTapImpl{
-		f: f,
+		f:            f,
+		name:         name,
+		nativeFormat: c.PreferredNativeFormat,
 	}
-
 	return t, nil
 }
 
@@ -156,22 +123,12 @@ func (t *TunTapImpl) MTU() (int, error) {
 	return int(ifreq.ifru_mtu), nil
 }
 
-func tuntapName(fd uintptr) (string, error) {
-	var ifName [_IF_NAMESIZE]byte
-	ifNameLen := uintptr(len(ifName))
-	r1, _, err := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd, _SYSPROTO_CONTROL, _UTUN_OPT_IFNAME, uintptr(unsafe.Pointer(&ifName[0])), uintptr(unsafe.Pointer(&ifNameLen)), 0)
-	if r1 != 0 {
-		return "", err
-	}
-	return string(ifName[:ifNameLen-1]), nil
-}
-
 func (t *TunTapImpl) Name() (string, error) {
-	return tuntapName(t.f.Fd())
+	return t.name, nil
 }
 
 func (t *TunTapImpl) NativeFormat() PayloadFormat {
-	return FormatIP
+	return t.nativeFormat
 }
 
 func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
@@ -205,18 +162,11 @@ retry:
 	if n == 0 {
 		return nil, nil
 	}
-	etherType := EtherType(0)
-	switch binary.BigEndian.Uint32(buf[:4]) {
-	case syscall.AF_INET:
-		etherType = EtherTypeIPv4
-	case syscall.AF_INET6:
-		etherType = EtherTypeIPv6
-	}
 	packet := &Packet{
-		Format:  FormatIP,
-		Proto:   etherType,
+		Format:  t.nativeFormat,
+		Proto:   EtherType(binary.BigEndian.Uint16(buf[2:4])),
 		Payload: buf[4:n],
-		Extra:   buf[:4],
+		Extra:   buf[:2],
 	}
 	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
 	if err != nil {
@@ -244,7 +194,7 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 }
 
 func (t *TunTapImpl) Write(packet *Packet) error {
-	packet, err := packet.ConvertTo(FormatIP, nil)
+	packet, err := packet.ConvertTo(t.outputFormat, t.hwAddr)
 	if err != nil {
 		return err
 	}
@@ -252,14 +202,8 @@ func (t *TunTapImpl) Write(packet *Packet) error {
 		return nil
 	}
 	buf := make([]byte, len(packet.Payload)+4)
-	switch packet.Proto {
-	case EtherTypeIPv4:
-		binary.BigEndian.PutUint32(buf[:4], syscall.AF_INET)
-	case EtherTypeIPv6:
-		binary.BigEndian.PutUint32(buf[:4], syscall.AF_INET6)
-	default:
-		return UnsupportedProtocolError
-	}
+	copy(buf[:2], packet.Extra)
+	binary.BigEndian.PutUint16(buf[2:4], uint16(packet.Proto))
 	copy(buf[4:], packet.Payload)
 	_, err = t.f.Write(buf)
 	if err != nil {

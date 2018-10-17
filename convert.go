@@ -25,6 +25,7 @@
 package gophertun
 
 import (
+	"encoding/binary"
 	"errors"
 	"net"
 )
@@ -42,10 +43,9 @@ func (p *Packet) ConvertTo(outputFormat PayloadFormat, hwAddr net.HardwareAddr) 
 			if len(p.Payload) < 14 {
 				return nil, errors.New("gophertun: invalid Ethernet frame")
 			}
-			etherType := (EtherType(p.Payload[12]) << 8) | EtherType(p.Payload[13])
 			return &Packet{
 				Format:  FormatIP,
-				Proto:   etherType,
+				Proto:   EtherType(binary.BigEndian.Uint16(p.Payload[12:14])),
 				Payload: p.Payload[14:],
 				Extra:   p.Extra,
 			}, nil
@@ -55,7 +55,8 @@ func (p *Packet) ConvertTo(outputFormat PayloadFormat, hwAddr net.HardwareAddr) 
 		case FormatIP:
 			frame := make([]byte, len(p.Payload)+14)
 			copy(frame[:6], hwAddr)
-			copy(frame[6:14], []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, byte(p.Proto >> 8), byte(p.Proto)})
+			copy(frame[6:12], []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+			binary.BigEndian.PutUint16(frame[12:14], uint16(p.Proto))
 			copy(frame[14:], p.Payload)
 			return &Packet{
 				Format:  FormatEthernet,

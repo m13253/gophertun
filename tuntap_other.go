@@ -1,4 +1,4 @@
-// +build !darwin,!freebsd,!linux,!solaris
+// +build !darwin,!linux,!windows
 
 /*
   MIT License
@@ -26,7 +26,9 @@
 
 package gophertun
 
-import "os"
+import (
+	"os"
+)
 
 type TunTapImpl struct {
 }

@@ -1,4 +1,4 @@
-// +build freebsd linux solaris
+// +build windows
 
 /*
   MIT License
@@ -26,7 +26,9 @@
 
 package gophertun
 
-import "os"
+import (
+	"os"
+)
 
 type TunTapImpl struct {
 }
