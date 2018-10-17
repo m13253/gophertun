@@ -1,5 +1,3 @@
-// +build !linux,!darwin
-
 /*
   MIT License
 
@@ -26,51 +24,18 @@
 
 package gophertun
 
-import "os"
-
-type TunTapImpl struct {
+func _IO(group, num uint8) uintptr {
+	return (uintptr(group) << 8) | uintptr(num)
 }
 
-func (c *TunTapConfig) Create() (Tunnel, error) {
-	return nil, UnsupportedFeatureError
+func _IOR(group, num uint8, len uintptr) uintptr {
+	return 0x80000000 | ((len & 0x3fff) << 16) | (uintptr(group) << 8) | uintptr(num)
 }
 
-func (t *TunTapImpl) Close() error {
-	return UnsupportedFeatureError
+func _IOW(group, num uint8, len uintptr) uintptr {
+	return 0x40000000 | ((len & 0x3fff) << 16) | (uintptr(group) << 8) | uintptr(num)
 }
 
-func (t *TunTapImpl) MTU() (int, error) {
-	return DefaultMTU, UnsupportedFeatureError
-}
-
-func (t *TunTapImpl) Name() (string, error) {
-	return "", UnsupportedFeatureError
-}
-
-func (t *TunTapImpl) NativeFormat() PayloadFormat {
-	return FormatUnknown
-}
-
-func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
-	return UnsupportedFeatureError
-}
-
-func (t *TunTapImpl) OutputFormat() PayloadFormat {
-	return FormatUnknown
-}
-
-func (t *TunTapImpl) RawFile() *os.File {
-	return nil
-}
-
-func (t *TunTapImpl) Read() (*Packet, error) {
-	return nil, UnsupportedFeatureError
-}
-
-func (t *TunTapImpl) SetMTU(mtu int) error {
-	return UnsupportedFeatureError
-}
-
-func (t *TunTapImpl) Write(packet *Packet) error {
-	return UnsupportedFeatureError
+func _IOWR(group, num uint8, len uintptr) uintptr {
+	return 0xc0000000 | ((len & 0x3fff) << 16) | (uintptr(group) << 8) | uintptr(num)
 }

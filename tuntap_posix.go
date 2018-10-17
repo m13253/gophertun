@@ -1,4 +1,4 @@
-// +build !darwin,!freebsd,!linux,!solaris
+// +build freebsd linux solaris
 
 /*
   MIT License

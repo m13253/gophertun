@@ -50,6 +50,11 @@ func main() {
 		log.Fatalln(err)
 	}
 	fmt.Printf("Device: %s\n", name)
+	mtu, err := t.MTU()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Printf("MTU:    %d\n", mtu)
 	err = t.Open(gophertun.FormatEthernet)
 	for {
 		p, err := t.Read()
