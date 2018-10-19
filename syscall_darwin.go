@@ -1,3 +1,5 @@
+// +build darwin
+
 /*
   MIT License
 
@@ -25,55 +27,41 @@
 package gophertun
 
 import (
-	"errors"
-	"os"
-)
-
-type Tunnel interface {
-	Close() error
-	MTU() (int, error)
-	Name() (string, error)
-	NativeFormat() PayloadFormat
-	Open(outputFormat PayloadFormat) error
-	OutputFormat() PayloadFormat
-	RawFile() *os.File
-	Read() (*Packet, error)
-	SetMTU(mtu int) error
-	Write(packet *Packet) error
-}
-
-type TunnelConfig interface {
-	Create() (Tunnel, error)
-}
-
-type Packet struct {
-	Format    PayloadFormat
-	EtherType EtherType
-	Payload   []byte
-	Extra     []byte
-}
-
-type PayloadFormat int
-
-const (
-	FormatUnknown PayloadFormat = iota
-	FormatIP
-	FormatEthernet
-)
-
-type EtherType uint16
-
-const (
-	EtherTypeIPv4 EtherType = 0x0800
-	EtherTypeIPv6 EtherType = 0x86dd
+	"syscall"
+	"unsafe"
 )
 
 const (
-	DefaultMRU = 65536
-	DefaultMTU = 1500
+	_PF_SYSTEM        = syscall.AF_SYSTEM
+	_SYSPROTO_CONTROL = 2
+	_AF_SYS_CONTROL   = 2
+	_UTUN_OPT_IFNAME  = 2
+	_IF_NAMESIZE      = 16
+)
+
+type (
+	ctl_info struct {
+		ctl_id   uint32
+		ctl_name [96]byte
+	}
+	ifreq_mtu struct {
+		ifr_name [_IF_NAMESIZE]byte
+		ifru_mtu int32
+		_        [28 - _IF_NAMESIZE]byte
+	}
 )
 
 var (
-	UnsupportedFeatureError  = errors.New("gophertun: feature unsupported on this platform")
-	UnsupportedProtocolError = errors.New("gophertun: protocol unsupported")
+	_CTLIOCGINFO = _IOWR('N', 3, unsafe.Sizeof(ctl_info{}))
+	_SIOCGIFMTU  = _IOWR('i', 51, unsafe.Sizeof(ifreq_mtu{}))
+	_SIOCSIFMTU  = _IOW('i', 52, unsafe.Sizeof(ifreq_mtu{}))
 )
+
+type sockaddr_ctl struct {
+	sc_len      uint8
+	sc_family   uint8
+	ss_sysaddr  uint16
+	sc_id       uint32
+	sc_unit     uint32
+	sc_reserved [5]uint32
+}

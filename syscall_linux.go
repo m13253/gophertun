@@ -1,3 +1,5 @@
+// +build linux
+
 /*
   MIT License
 
@@ -24,56 +26,35 @@
 
 package gophertun
 
-import (
-	"errors"
-	"os"
+const (
+	_IF_NAMESIZE     = 16
+	_IFF_TUN         = 0x0001
+	_IFF_TAP         = 0x0002
+	_IFF_MULTI_QUEUE = 0x0100
 )
 
-type Tunnel interface {
-	Close() error
-	MTU() (int, error)
-	Name() (string, error)
-	NativeFormat() PayloadFormat
-	Open(outputFormat PayloadFormat) error
-	OutputFormat() PayloadFormat
-	RawFile() *os.File
-	Read() (*Packet, error)
-	SetMTU(mtu int) error
-	Write(packet *Packet) error
-}
-
-type TunnelConfig interface {
-	Create() (Tunnel, error)
-}
-
-type Packet struct {
-	Format    PayloadFormat
-	EtherType EtherType
-	Payload   []byte
-	Extra     []byte
-}
-
-type PayloadFormat int
-
-const (
-	FormatUnknown PayloadFormat = iota
-	FormatIP
-	FormatEthernet
-)
-
-type EtherType uint16
-
-const (
-	EtherTypeIPv4 EtherType = 0x0800
-	EtherTypeIPv6 EtherType = 0x86dd
-)
-
-const (
-	DefaultMRU = 65536
-	DefaultMTU = 1500
+type (
+	ifreq_flags struct {
+		ifr_name  [_IF_NAMESIZE]byte
+		ifr_flags int16
+		_         int16
+		_         [20]byte
+	}
+	ifreq_index struct {
+		ifr_name    [_IF_NAMESIZE]byte
+		ifr_ifindex int32
+		_           [20]byte
+	}
+	ifreq_mtu struct {
+		ifr_name [_IF_NAMESIZE]byte
+		ifr_mtu  int32
+		_        [20]byte
+	}
 )
 
 var (
-	UnsupportedFeatureError  = errors.New("gophertun: feature unsupported on this platform")
-	UnsupportedProtocolError = errors.New("gophertun: protocol unsupported")
+	_TUNSETIFF            = _IOW('T', 202, 4)
+	_SIOCGIFMTU   uintptr = 0x8921
+	_SIOCSIFMTU   uintptr = 0x8922
+	_SIOCGIFINDEX uintptr = 0x8933
 )

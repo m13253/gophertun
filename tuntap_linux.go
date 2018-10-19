@@ -39,39 +39,11 @@ import (
 type TunTapImpl struct {
 	f            *os.File
 	name         string
+	netlink      net.PacketConn
 	nativeFormat PayloadFormat
 	outputFormat PayloadFormat
 	hwAddr       net.HardwareAddr
 }
-
-const (
-	_IF_NAMESIZE     = 16
-	_IFF_TUN         = 0x0001
-	_IFF_TAP         = 0x0002
-	_IFF_MULTI_QUEUE = 0x0100
-)
-
-type (
-	ifreq_addr struct {
-		ifr_name  [_IF_NAMESIZE]byte
-		ifru_addr syscall.RawSockaddr
-	}
-	ifreq_mtu struct {
-		ifr_name [_IF_NAMESIZE]byte
-		ifru_mtu int32
-		_        [28 - _IF_NAMESIZE]byte
-	}
-	ifreq_flags struct {
-		ifr_name   [_IF_NAMESIZE]byte
-		ifru_flags int16
-	}
-)
-
-var (
-	_TUNSETIFF          = _IOW('T', 202, 4)
-	_SIOCGIFMTU uintptr = 0x8921
-	_SIOCSIFMTU uintptr = 0x8922
-)
 
 func (c *TunTapConfig) Create() (Tunnel, error) {
 	f, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0666)
@@ -86,9 +58,9 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	}
 	switch c.PreferredNativeFormat {
 	case FormatIP:
-		ifr.ifru_flags = _IFF_TUN
+		ifr.ifr_flags = _IFF_TUN
 	case FormatEthernet:
-		ifr.ifru_flags = _IFF_TUN
+		ifr.ifr_flags = _IFF_TAP
 	default:
 		return nil, UnsupportedProtocolError
 	}
@@ -110,17 +82,24 @@ func (t *TunTapImpl) Close() error {
 }
 
 func (t *TunTapImpl) MTU() (int, error) {
-	ifreq := &ifreq_mtu{}
 	name, err := t.Name()
 	if err != nil {
 		return DefaultMTU, err
 	}
+
+	sock, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return DefaultMTU, err
+	}
+	defer syscall.Close(sock)
+
+	ifreq := &ifreq_mtu{}
 	copy(ifreq.ifr_name[:], name)
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), _SIOCGIFMTU, uintptr(unsafe.Pointer(ifreq)))
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(sock), _SIOCGIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
 		return DefaultMTU, err
 	}
-	return int(ifreq.ifru_mtu), nil
+	return int(ifreq.ifr_mtu), nil
 }
 
 func (t *TunTapImpl) Name() (string, error) {
@@ -141,6 +120,7 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 		return UnsupportedFeatureError
 	}
 	t.hwAddr = generateMACAddress()
+
 	return nil
 }
 
@@ -163,10 +143,10 @@ retry:
 		return nil, nil
 	}
 	packet := &Packet{
-		Format:  t.nativeFormat,
-		Proto:   EtherType(binary.BigEndian.Uint16(buf[2:4])),
-		Payload: buf[4:n],
-		Extra:   buf[:2],
+		Format:    t.nativeFormat,
+		EtherType: EtherType(binary.BigEndian.Uint16(buf[2:4])),
+		Payload:   buf[4:n],
+		Extra:     buf[:2],
 	}
 	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
 	if err != nil {
@@ -179,14 +159,21 @@ retry:
 }
 
 func (t *TunTapImpl) SetMTU(mtu int) error {
-	ifreq := &ifreq_mtu{}
 	name, err := t.Name()
 	if err != nil {
 		return err
 	}
+
+	sock, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(sock)
+
+	ifreq := &ifreq_mtu{}
 	copy(ifreq.ifr_name[:], name)
-	ifreq.ifru_mtu = int32(mtu)
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), _SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
+	ifreq.ifr_mtu = int32(mtu)
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(sock), _SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
 		return err
 	}
@@ -203,7 +190,7 @@ func (t *TunTapImpl) Write(packet *Packet) error {
 	}
 	buf := make([]byte, len(packet.Payload)+4)
 	copy(buf[:2], packet.Extra)
-	binary.BigEndian.PutUint16(buf[2:4], uint16(packet.Proto))
+	binary.BigEndian.PutUint16(buf[2:4], uint16(packet.EtherType))
 	copy(buf[4:], packet.Payload)
 	_, err = t.f.Write(buf)
 	if err != nil {
