@@ -37,6 +37,10 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	return nil, UnsupportedFeatureError
 }
 
+func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
+	return 0, UnsupportedFeatureError
+}
+
 func (t *TunTapImpl) Close() error {
 	return UnsupportedFeatureError
 }

@@ -26,8 +26,11 @@
 
 package gophertun
 
+import (
+	"golang.org/x/sys/unix"
+)
+
 const (
-	_IF_NAMESIZE     = 16
 	_IFF_TUN         = 0x0001
 	_IFF_TAP         = 0x0002
 	_IFF_MULTI_QUEUE = 0x0100
@@ -35,26 +38,23 @@ const (
 
 type (
 	ifreq_flags struct {
-		ifr_name  [_IF_NAMESIZE]byte
+		ifr_name  [unix.IFNAMSIZ]byte
 		ifr_flags int16
 		_         int16
 		_         [20]byte
 	}
 	ifreq_index struct {
-		ifr_name    [_IF_NAMESIZE]byte
+		ifr_name    [unix.IFNAMSIZ]byte
 		ifr_ifindex int32
 		_           [20]byte
 	}
 	ifreq_mtu struct {
-		ifr_name [_IF_NAMESIZE]byte
+		ifr_name [unix.IFNAMSIZ]byte
 		ifr_mtu  int32
 		_        [20]byte
 	}
 )
 
 var (
-	_TUNSETIFF            = _IOW('T', 202, 4)
-	_SIOCGIFMTU   uintptr = 0x8921
-	_SIOCSIFMTU   uintptr = 0x8922
-	_SIOCGIFINDEX uintptr = 0x8933
+	_TUNSETIFF = _IOW('T', 202, 4)
 )

@@ -33,6 +33,8 @@ import (
 	"os"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 type TunTapImpl struct {
@@ -42,7 +44,7 @@ type TunTapImpl struct {
 }
 
 func (c *TunTapConfig) Create() (Tunnel, error) {
-	fd, err := syscall.Socket(syscall.AF_SYSTEM, syscall.SOCK_DGRAM, _SYSPROTO_CONTROL)
+	fd, err := syscall.Socket(_PF_SYSTEM, syscall.SOCK_DGRAM, _SYSPROTO_CONTROL)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +101,10 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	return t, nil
 }
 
+func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
+	return 0, UnsupportedFeatureError
+}
+
 func (t *TunTapImpl) Close() error {
 	return t.f.Close()
 }
@@ -110,7 +116,7 @@ func (t *TunTapImpl) MTU() (int, error) {
 		return DefaultMTU, err
 	}
 	copy(ifreq.ifr_name[:], name)
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), _SIOCGIFMTU, uintptr(unsafe.Pointer(ifreq)))
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCGIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
 		return DefaultMTU, err
 	}
@@ -118,7 +124,7 @@ func (t *TunTapImpl) MTU() (int, error) {
 }
 
 func tuntapName(fd uintptr) (string, error) {
-	var ifName [_IF_NAMESIZE]byte
+	var ifName [unix.IFNAMSIZ]byte
 	ifNameLen := uintptr(len(ifName))
 	r1, _, err := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd, _SYSPROTO_CONTROL, _UTUN_OPT_IFNAME, uintptr(unsafe.Pointer(&ifName[0])), uintptr(unsafe.Pointer(&ifNameLen)), 0)
 	if r1 != 0 {
@@ -197,7 +203,7 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 	}
 	copy(ifreq.ifr_name[:], name)
 	ifreq.ifru_mtu = int32(mtu)
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), _SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
 		return err
 	}

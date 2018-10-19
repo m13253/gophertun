@@ -26,10 +26,12 @@ package gophertun
 
 import (
 	"errors"
+	"net"
 	"os"
 )
 
 type Tunnel interface {
+	AddIPAddresses(addresses []*IPAddress) (int, error)
 	Close() error
 	MTU() (int, error)
 	Name() (string, error)
@@ -44,6 +46,11 @@ type Tunnel interface {
 
 type TunnelConfig interface {
 	Create() (Tunnel, error)
+}
+
+type IPAddress struct {
+	Net  *net.IPNet
+	Peer *net.IPNet
 }
 
 type Packet struct {

@@ -34,12 +34,14 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 type TunTapImpl struct {
 	f            *os.File
-	name         string
-	netlink      net.PacketConn
+	linkIndex    int
 	nativeFormat PayloadFormat
 	outputFormat PayloadFormat
 	hwAddr       net.HardwareAddr
@@ -52,7 +54,7 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	}
 	ifr := &ifreq_flags{}
 	if c.AllowNameSuffix && strings.HasSuffix(c.NameHint, "0") {
-		copy(ifr.ifr_name[:], c.NameHint[:len(c.NameHint)-1][:_IF_NAMESIZE-2]+"%i")
+		copy(ifr.ifr_name[:], c.NameHint[:len(c.NameHint)-1][:unix.IFNAMSIZ-2]+"%i")
 	} else {
 		copy(ifr.ifr_name[:], c.NameHint)
 	}
@@ -62,19 +64,44 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	case FormatEthernet:
 		ifr.ifr_flags = _IFF_TAP
 	default:
+		f.Close()
 		return nil, UnsupportedProtocolError
 	}
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), _TUNSETIFF, uintptr(unsafe.Pointer(ifr)))
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), unix.TUNSETIFF, uintptr(unsafe.Pointer(ifr)))
 	if r1 != 0 {
+		f.Close()
 		return nil, err
 	}
 	name := string(bytes.SplitN(ifr.ifr_name[:], []byte{0}, 2)[0])
+	link, err := netlink.LinkByName(name)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
 	t := &TunTapImpl{
 		f:            f,
-		name:         name,
+		linkIndex:    link.Attrs().Index,
 		nativeFormat: c.PreferredNativeFormat,
 	}
 	return t, nil
+}
+
+func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
+	link, err := netlink.LinkByIndex(t.linkIndex)
+	if err != nil {
+		return 0, err
+	}
+	for i, addr := range addresses {
+		a := &netlink.Addr{
+			IPNet: addr.Net,
+			Peer:  addr.Peer,
+		}
+		err = netlink.AddrAdd(link, a)
+		if err != nil {
+			return i, err
+		}
+	}
+	return len(addresses), nil
 }
 
 func (t *TunTapImpl) Close() error {
@@ -82,28 +109,19 @@ func (t *TunTapImpl) Close() error {
 }
 
 func (t *TunTapImpl) MTU() (int, error) {
-	name, err := t.Name()
+	link, err := netlink.LinkByIndex(t.linkIndex)
 	if err != nil {
 		return DefaultMTU, err
 	}
-
-	sock, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, 0)
-	if err != nil {
-		return DefaultMTU, err
-	}
-	defer syscall.Close(sock)
-
-	ifreq := &ifreq_mtu{}
-	copy(ifreq.ifr_name[:], name)
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(sock), _SIOCGIFMTU, uintptr(unsafe.Pointer(ifreq)))
-	if r1 != 0 {
-		return DefaultMTU, err
-	}
-	return int(ifreq.ifr_mtu), nil
+	return link.Attrs().MTU, nil
 }
 
 func (t *TunTapImpl) Name() (string, error) {
-	return t.name, nil
+	link, err := netlink.LinkByIndex(t.linkIndex)
+	if err != nil {
+		return "", err
+	}
+	return link.Attrs().Name, nil
 }
 
 func (t *TunTapImpl) NativeFormat() PayloadFormat {
@@ -120,7 +138,14 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 		return UnsupportedFeatureError
 	}
 	t.hwAddr = generateMACAddress()
-
+	link, err := netlink.LinkByIndex(t.linkIndex)
+	if err != nil {
+		return err
+	}
+	err = netlink.LinkSetUp(link)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -159,22 +184,12 @@ retry:
 }
 
 func (t *TunTapImpl) SetMTU(mtu int) error {
-	name, err := t.Name()
+	link, err := netlink.LinkByIndex(t.linkIndex)
 	if err != nil {
 		return err
 	}
-
-	sock, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, 0)
+	err = netlink.LinkSetMTU(link, mtu)
 	if err != nil {
-		return err
-	}
-	defer syscall.Close(sock)
-
-	ifreq := &ifreq_mtu{}
-	copy(ifreq.ifr_name[:], name)
-	ifreq.ifr_mtu = int32(mtu)
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(sock), _SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
-	if r1 != 0 {
 		return err
 	}
 	return nil

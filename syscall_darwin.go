@@ -29,6 +29,8 @@ package gophertun
 import (
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -36,7 +38,6 @@ const (
 	_SYSPROTO_CONTROL = 2
 	_AF_SYS_CONTROL   = 2
 	_UTUN_OPT_IFNAME  = 2
-	_IF_NAMESIZE      = 16
 )
 
 type (
@@ -45,16 +46,14 @@ type (
 		ctl_name [96]byte
 	}
 	ifreq_mtu struct {
-		ifr_name [_IF_NAMESIZE]byte
+		ifr_name [unix.IFNAMSIZ]byte
 		ifru_mtu int32
-		_        [28 - _IF_NAMESIZE]byte
+		_        [28 - unix.IFNAMSIZ]byte
 	}
 )
 
 var (
 	_CTLIOCGINFO = _IOWR('N', 3, unsafe.Sizeof(ctl_info{}))
-	_SIOCGIFMTU  = _IOWR('i', 51, unsafe.Sizeof(ifreq_mtu{}))
-	_SIOCSIFMTU  = _IOW('i', 52, unsafe.Sizeof(ifreq_mtu{}))
 )
 
 type sockaddr_ctl struct {

@@ -64,6 +64,6 @@ func main() {
 		if p == nil {
 			break
 		}
-		fmt.Printf("Proto: %04x Payload: %x Extra: %x\n", p.Proto, p.Payload, p.Extra)
+		fmt.Printf("EtherType: %04x Payload: %x Extra: %x\n", p.EtherType, p.Payload, p.Extra)
 	}
 }
