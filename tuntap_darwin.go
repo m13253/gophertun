@@ -46,14 +46,15 @@ type TunTapImpl struct {
 func (c *TunTapConfig) Create() (Tunnel, error) {
 	fd, err := syscall.Socket(_PF_SYSTEM, syscall.SOCK_DGRAM, _SYSPROTO_CONTROL)
 	if err != nil {
-		return nil, err
+		return nil, os.NewSyscallError("socket", err)
 	}
 
 	info := &ctl_info{}
 	copy(info.ctl_name[:], "com.apple.net.utun_control")
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), _CTLIOCGINFO, uintptr(unsafe.Pointer(info)))
 	if r1 != 0 {
-		return nil, err
+		syscall.Close(fd)
+		return nil, os.NewSyscallError("ioctl (CTLIOCGINFO)", err)
 	}
 
 	sc := &sockaddr_ctl{
@@ -75,22 +76,25 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 			sc.sc_unit = 0
 			r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
 			if r1 != 0 {
-				return nil, err
+				return nil, os.NewSyscallError("connect", err)
 			}
 		} else {
-			return nil, err
+			return nil, os.NewSyscallError("connect", err)
 		}
 	}
 
 	name, err := tuntapName(uintptr(fd))
 	if err != nil {
+		syscall.Close(fd)
 		return nil, err
 	}
 
 	err = syscall.SetNonblock(fd, true)
 	if err != nil {
+		syscall.Close(fd)
 		return nil, err
 	}
+	syscall.CloseOnExec(fd)
 
 	f := os.NewFile(uintptr(fd), "/dev/net/"+name)
 
@@ -118,7 +122,7 @@ func (t *TunTapImpl) MTU() (int, error) {
 	copy(ifreq.ifr_name[:], name)
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCGIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
-		return DefaultMTU, err
+		return DefaultMTU, os.NewSyscallError("ioctl (SIOCGIFMTU)", err)
 	}
 	return int(ifreq.ifru_mtu), nil
 }
@@ -128,7 +132,7 @@ func tuntapName(fd uintptr) (string, error) {
 	ifNameLen := uintptr(len(ifName))
 	r1, _, err := syscall.Syscall6(syscall.SYS_GETSOCKOPT, fd, _SYSPROTO_CONTROL, _UTUN_OPT_IFNAME, uintptr(unsafe.Pointer(&ifName[0])), uintptr(unsafe.Pointer(&ifNameLen)), 0)
 	if r1 != 0 {
-		return "", err
+		return "", os.NewSyscallError("getsockopt", err)
 	}
 	return string(ifName[:ifNameLen-1]), nil
 }
@@ -205,7 +209,7 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 	ifreq.ifru_mtu = int32(mtu)
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
-		return err
+		return os.NewSyscallError("ioctl (SIOCSIFMTU)", err)
 	}
 	return nil
 }
