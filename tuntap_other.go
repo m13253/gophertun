@@ -77,6 +77,6 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 	return UnsupportedFeatureError
 }
 
-func (t *TunTapImpl) Write(packet *Packet) error {
+func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
 	return UnsupportedFeatureError
 }

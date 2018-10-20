@@ -40,24 +40,24 @@ func (p *Packet) ConvertTo(outputFormat PayloadFormat, hwAddr net.HardwareAddr) 
 		case FormatIP:
 			return p, nil
 		case FormatEthernet:
-			if len(p.Payload) < 14 {
+			if len(p.Payload) < EthernetHeaderSize {
 				return nil, errors.New("gophertun: invalid Ethernet frame")
 			}
 			return &Packet{
 				Format:    FormatIP,
 				EtherType: EtherType(binary.BigEndian.Uint16(p.Payload[12:14])),
-				Payload:   p.Payload[14:],
+				Payload:   p.Payload[EthernetHeaderSize:],
 				Extra:     p.Extra,
 			}, nil
 		}
 	case FormatEthernet:
 		switch p.Format {
 		case FormatIP:
-			frame := make([]byte, len(p.Payload)+14)
+			frame := make([]byte, len(p.Payload)+EthernetHeaderSize)
 			copy(frame[:6], []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 			copy(frame[6:12], hwAddr)
 			binary.BigEndian.PutUint16(frame[12:14], uint16(p.EtherType))
-			copy(frame[14:], p.Payload)
+			copy(frame[EthernetHeaderSize:], p.Payload)
 			return &Packet{
 				Format:    FormatEthernet,
 				EtherType: p.EtherType,

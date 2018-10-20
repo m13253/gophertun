@@ -223,7 +223,7 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 	return nil
 }
 
-func (t *TunTapImpl) Write(packet *Packet) error {
+func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
 	packet, err := packet.ConvertTo(FormatIP, nil)
 	if err != nil {
 		return err

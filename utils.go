@@ -24,66 +24,27 @@
 
 package gophertun
 
-import (
-	"errors"
-	"net"
-	"os"
-)
-
-type Tunnel interface {
-	AddIPAddresses(addresses []*IPAddress) (int, error)
-	Close() error
-	MTU() (int, error)
-	Name() (string, error)
-	NativeFormat() PayloadFormat
-	Open(outputFormat PayloadFormat) error
-	OutputFormat() PayloadFormat
-	RawFile() *os.File
-	Read() (*Packet, error)
-	SetMTU(mtu int) error
-	Write(packet *Packet, pmtud bool) error
+func dupBytes(bytes []byte) []byte {
+	if len(bytes) == 0 {
+		return nil
+	}
+	result := make([]byte, len(bytes))
+	copy(result, bytes)
+	return result
 }
 
-type TunnelConfig interface {
-	Create() (Tunnel, error)
+func checksum(buf []byte) uint16 {
+	if len(buf) > 0xffff {
+		panic("gophertun: checksum length > 65535 unimplemented yet")
+	}
+	sum := uint32(0)
+	i := 0
+	for ; i < len(buf)-1; i += 2 {
+		sum += uint32(buf[i]) << 8
+		sum += uint32(buf[i+1])
+	}
+	if i < len(buf) {
+		sum += uint32(buf[len(buf)-1])
+	}
+	return ^uint16(sum>>16 + sum)
 }
-
-type IPAddress struct {
-	Net  *net.IPNet
-	Peer *net.IPNet
-}
-
-type Packet struct {
-	Format    PayloadFormat
-	EtherType EtherType
-	Payload   []byte
-	Extra     []byte
-}
-
-type PayloadFormat int
-
-const (
-	FormatUnknown PayloadFormat = iota
-	FormatIP
-	FormatEthernet
-)
-
-type EtherType uint16
-
-const (
-	EtherTypeIPv4 EtherType = 0x0800
-	EtherTypeARP  EtherType = 0x0806
-	EtherTypeIPv6 EtherType = 0x86dd
-)
-
-const (
-	DefaultMRU         = 65536
-	DefaultMTU         = 1500
-	DefaultTTL         = 64
-	EthernetHeaderSize = 14
-)
-
-var (
-	UnsupportedFeatureError  = errors.New("gophertun: feature unsupported on this platform")
-	UnsupportedProtocolError = errors.New("gophertun: protocol unsupported")
-)
