@@ -83,6 +83,15 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		}
 	}
 
+	if c.ExtraFlags != 0 {
+		extraFlags := uint32(c.ExtraFlags)
+		r1, _, err := syscall.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(fd), _SYSPROTO_CONTROL, _UTUN_OPT_FLAGS, uintptr(unsafe.Pointer(&extraFlags)), unsafe.Sizeof(extraFlags), 0)
+		if r1 != 0 {
+			syscall.Close(fd)
+			return nil, os.NewSyscallError("setsockopt", err)
+		}
+	}
+
 	name, err := tuntapName(uintptr(fd))
 	if err != nil {
 		syscall.Close(fd)

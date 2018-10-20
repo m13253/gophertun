@@ -37,6 +37,7 @@ const (
 	_PF_SYSTEM        = syscall.AF_SYSTEM
 	_SYSPROTO_CONTROL = 2
 	_AF_SYS_CONTROL   = 2
+	_UTUN_OPT_FLAGS   = 1
 	_UTUN_OPT_IFNAME  = 2
 )
 

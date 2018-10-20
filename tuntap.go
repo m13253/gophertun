@@ -28,5 +28,5 @@ type TunTapConfig struct {
 	NameHint              string
 	AllowNameSuffix       bool
 	PreferredNativeFormat PayloadFormat
-	ExtraFlags            int16
+	ExtraFlags            uint32
 }

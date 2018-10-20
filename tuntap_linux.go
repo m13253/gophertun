@@ -66,13 +66,14 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 	}
 	switch c.PreferredNativeFormat {
 	case FormatIP:
-		ifreq.ifr_flags = _IFF_TUN | c.ExtraFlags
+		ifreq.ifr_flags = _IFF_TUN | int16(c.ExtraFlags)
 	case FormatEthernet:
-		ifreq.ifr_flags = _IFF_TAP | c.ExtraFlags
+		ifreq.ifr_flags = _IFF_TAP | int16(c.ExtraFlags)
 	default:
 		f.Close()
 		return nil, UnsupportedProtocolError
 	}
+
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), unix.TUNSETIFF, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
 		if errno, ok := err.(syscall.Errno); ok && (errno == syscall.EINVAL || errno == syscall.EBUSY) && c.AllowNameSuffix {
