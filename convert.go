@@ -68,5 +68,5 @@ func (p *Packet) ConvertTo(outputFormat PayloadFormat, hwAddr net.HardwareAddr) 
 			return p, nil
 		}
 	}
-	return nil, UnsupportedProtocolError
+	return nil, ErrUnsupportedProtocol
 }

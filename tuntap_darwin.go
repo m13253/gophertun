@@ -45,6 +45,7 @@ type TunTapImpl struct {
 	ifreqSockIn6 *os.File
 	outputFormat PayloadFormat
 	hwAddr       net.HardwareAddr
+	buffer       chan *Packet
 }
 
 func (c *TunTapConfig) Create() (Tunnel, error) {
@@ -120,6 +121,7 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		f:            f,
 		ifreqSock:    os.NewFile(uintptr(ifreqSock), ""),
 		ifreqSockIn6: os.NewFile(uintptr(ifreqSockIn6), ""),
+		buffer:       make(chan *Packet, DefaultPostProcessBufferSize),
 	}
 	return t, nil
 }
@@ -248,7 +250,7 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 	case FormatEthernet:
 		t.outputFormat = FormatEthernet
 	default:
-		return UnsupportedFeatureError
+		return ErrUnsupportedFeature
 	}
 	t.hwAddr = generateMACAddress()
 
@@ -280,6 +282,15 @@ func (t *TunTapImpl) RawFile() *os.File {
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {
+	select {
+	case p := <-t.buffer:
+		return p, nil
+	default:
+		return readCook(t.readRaw, t.writeRaw, t.hwAddr, t.buffer)
+	}
+}
+
+func (t *TunTapImpl) readRaw() (*Packet, error) {
 	buf := make([]byte, DefaultMRU+4)
 retry:
 	n, err := t.f.Read(buf[:])
@@ -328,12 +339,19 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 }
 
 func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
-	packet, err := packet.ConvertTo(FormatIP, nil)
+	if pmtud {
+		return writeCook(t.writeRaw, packet, t.MTU, t.hwAddr, t.buffer)
+	}
+	return writeCook(t.writeRaw, packet, nil, t.hwAddr, t.buffer)
+}
+
+func (t *TunTapImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
+	packet, err = packet.ConvertTo(FormatIP, nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if packet == nil {
-		return nil
+		return false, nil
 	}
 	buf := make([]byte, len(packet.Payload)+4)
 	switch packet.EtherType {
@@ -342,12 +360,12 @@ func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
 	case EtherTypeIPv6:
 		binary.BigEndian.PutUint32(buf[:4], syscall.AF_INET6)
 	default:
-		return UnsupportedProtocolError
+		return false, nil
 	}
 	copy(buf[4:], packet.Payload)
 	_, err = t.f.Write(buf)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return false, nil
 }

@@ -120,6 +120,17 @@ type CodecIPv6HopByHopOption struct {
 	NextOption *CodecIPv6HopByHopOption
 }
 
+type CodecIPv6Fragment struct {
+	NextHeader     uint8
+	Reserved1      uint8
+	FragmentOffset uint16 // raw * 8
+	Reserved2      uint8
+	MoreFragment   bool
+	Identification uint32
+	Payload        Codec
+	pseudoHeader   hasPseudoHeader
+}
+
 type CodecICMP struct {
 	Type     uint8
 	Code     uint8
@@ -286,7 +297,7 @@ func (c *CodecIPv4) Decode(buf []byte) error {
 	} else {
 		if c.Flags&0x1 == 0x0 && c.FragmentOffset == 0 {
 			switch c.Protocol {
-			case 0x01:
+			case 1:
 				c.Payload = &CodecICMP{}
 			default:
 				c.Payload = &CodecRaw{}
@@ -390,6 +401,8 @@ func (c *CodecIPv6) Decode(buf []byte) error {
 		switch c.NextHeader {
 		case 0:
 			c.Payload = &CodecIPv6HopByHop{}
+		case 44:
+			c.Payload = &CodecIPv6Fragment{}
 		case 58:
 			c.Payload = &CodecICMPv6{}
 		default:
@@ -472,6 +485,8 @@ func (c *CodecIPv6HopByHop) Decode(buf []byte) error {
 	switch c.NextHeader {
 	case 0:
 		c.Payload = &CodecIPv6HopByHop{}
+	case 44:
+		c.Payload = &CodecIPv6Fragment{}
 	case 58:
 		c.Payload = &CodecICMPv6{}
 	default:
@@ -589,6 +604,73 @@ func (c *CodecIPv6HopByHopOption) String() string {
 		return fmt.Sprintf("{Type:%d, Len:%d, %v}", c.Type, c.DataLength, c.Data)
 	}
 	return fmt.Sprintf("{Type:%d, Len:%d, %v}, %v", c.Type, c.DataLength, c.Data, c.NextOption)
+}
+func (c *CodecIPv6Fragment) Decode(buf []byte) error {
+	if len(buf) < 8 {
+		return errors.New("gophertun: invalid IPv6-Fragment header")
+	}
+	c.NextHeader = buf[0]
+	c.Reserved1 = buf[1]
+	c.FragmentOffset = binary.BigEndian.Uint16(buf[2:4]) & 0xfff8
+	c.Reserved2 = (buf[3] & 0x6) >> 1
+	c.MoreFragment = (buf[3] & 0x1) != 0
+	c.Identification = binary.BigEndian.Uint32(buf[4:8])
+
+	switch c.NextHeader {
+	case 0:
+		c.Payload = &CodecIPv6HopByHop{}
+	case 44:
+		c.Payload = &CodecIPv6Fragment{}
+	case 58:
+		c.Payload = &CodecICMPv6{}
+	default:
+		c.Payload = &CodecRaw{}
+	}
+	if wph, ok := c.Payload.(wantPseudoHeader); ok {
+		wph.setPseudoHeader(c.pseudoHeader)
+	}
+	err := c.Payload.Decode(buf[8:])
+	if err != nil {
+		c.Payload = &CodecRaw{buf[8:], err}
+	}
+
+	return nil
+}
+
+func (c *CodecIPv6Fragment) Encode() ([]byte, error) {
+	if c.FragmentOffset&0x7 != 0 {
+		return nil, errors.New("gophertun: invalid IPv6-Fragment header")
+	}
+
+	payload, err := c.Payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, 8+len(payload))
+	buf[0] = c.NextHeader
+	buf[1] = c.Reserved1
+	buf[2] = uint8(c.FragmentOffset >> 8)
+	buf[3] = uint8(c.FragmentOffset&0xf8) | ((c.Reserved2 & 0x3) << 1)
+	if c.MoreFragment {
+		buf[3] |= 0x1
+	}
+	binary.BigEndian.PutUint32(buf[4:8], c.Identification)
+	copy(buf[8:], payload)
+
+	return buf, nil
+}
+
+func (c *CodecIPv6Fragment) setPseudoHeader(pseudoHeader hasPseudoHeader) {
+	c.pseudoHeader = pseudoHeader
+}
+
+func (c *CodecIPv6Fragment) NextLayer() Codec {
+	return c.Payload
+}
+
+func (c *CodecIPv6Fragment) String() string {
+	return fmt.Sprintf("&CodecIPv6Fragment{NH:%d, FO:%d, M:%v, %v}", c.NextHeader, c.FragmentOffset, c.MoreFragment, c.Payload)
 }
 
 func (c *CodecICMP) Decode(buf []byte) error {

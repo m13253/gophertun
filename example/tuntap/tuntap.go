@@ -62,7 +62,7 @@ func main() {
 		log.Fatalln(err)
 	}
 	fmt.Printf("Device: %s\n", name)
-	err = t.SetMTU(65535)
+	err = t.SetMTU(65521)
 	if err != nil {
 		log.Fatalln(err)
 	}

@@ -46,6 +46,7 @@ type TunTapImpl struct {
 	nativeFormat PayloadFormat
 	outputFormat PayloadFormat
 	hwAddr       net.HardwareAddr
+	buffer       chan *Packet
 }
 
 func (c *TunTapConfig) Create() (Tunnel, error) {
@@ -71,7 +72,7 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		ifreq.ifr_flags = _IFF_TAP | int16(c.ExtraFlags)
 	default:
 		f.Close()
-		return nil, UnsupportedProtocolError
+		return nil, ErrUnsupportedProtocol
 	}
 
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), unix.TUNSETIFF, uintptr(unsafe.Pointer(ifreq)))
@@ -125,6 +126,7 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		ifreqSock:    os.NewFile(uintptr(ifreqSock), ""),
 		netlink:      link,
 		nativeFormat: c.PreferredNativeFormat,
+		buffer:       make(chan *Packet, DefaultPostProcessBufferSize),
 	}
 	return t, nil
 }
@@ -184,7 +186,7 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 	case FormatEthernet:
 		t.outputFormat = FormatEthernet
 	default:
-		return UnsupportedFeatureError
+		return ErrUnsupportedFeature
 	}
 	t.hwAddr = generateMACAddress()
 	err := netlink.LinkSetUp(t.netlink)
@@ -203,6 +205,15 @@ func (t *TunTapImpl) RawFile() *os.File {
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {
+	select {
+	case p := <-t.buffer:
+		return p, nil
+	default:
+		return readCook(t.readRaw, t.writeRaw, t.hwAddr, t.buffer)
+	}
+}
+
+func (t *TunTapImpl) readRaw() (*Packet, error) {
 	buf := make([]byte, DefaultMRU+EthernetHeaderSize+4)
 retry:
 	n, err := t.f.Read(buf[:])
@@ -218,7 +229,6 @@ retry:
 		Payload:   buf[4:n],
 		Extra:     buf[:2],
 	}
-	_ = proxyARP(packet, t.hwAddr) // TODO: Debug
 	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
 	if err != nil {
 		return nil, err
@@ -245,12 +255,19 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 }
 
 func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
-	packet, err := packet.ConvertTo(t.outputFormat, t.hwAddr)
+	if pmtud {
+		return writeCook(t.writeRaw, packet, t.MTU, t.hwAddr, t.buffer)
+	}
+	return writeCook(t.writeRaw, packet, nil, t.hwAddr, t.buffer)
+}
+
+func (t *TunTapImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
+	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if packet == nil {
-		return nil
+		return false, nil
 	}
 	buf := make([]byte, len(packet.Payload)+4)
 	copy(buf[:2], packet.Extra)
@@ -258,7 +275,7 @@ func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
 	copy(buf[4:], packet.Payload)
 	_, err = t.f.Write(buf)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return false, nil
 }

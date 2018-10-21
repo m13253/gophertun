@@ -34,23 +34,23 @@ type TunTapImpl struct {
 }
 
 func (c *TunTapConfig) Create() (Tunnel, error) {
-	return nil, UnsupportedFeatureError
+	return nil, ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
-	return 0, UnsupportedFeatureError
+	return 0, ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) Close() error {
-	return UnsupportedFeatureError
+	return ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) MTU() (int, error) {
-	return DefaultMTU, UnsupportedFeatureError
+	return DefaultMTU, ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) Name() (string, error) {
-	return "", UnsupportedFeatureError
+	return "", ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) NativeFormat() PayloadFormat {
@@ -58,7 +58,7 @@ func (t *TunTapImpl) NativeFormat() PayloadFormat {
 }
 
 func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
-	return UnsupportedFeatureError
+	return ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) OutputFormat() PayloadFormat {
@@ -70,13 +70,13 @@ func (t *TunTapImpl) RawFile() *os.File {
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {
-	return nil, UnsupportedFeatureError
+	return nil, ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) SetMTU(mtu int) error {
-	return UnsupportedFeatureError
+	return ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
-	return UnsupportedFeatureError
+	return ErrUnsupportedFeature
 }

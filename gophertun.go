@@ -77,13 +77,14 @@ const (
 )
 
 const (
-	DefaultMRU         = 65536
-	DefaultMTU         = 1500
-	DefaultTTL         = 64
-	EthernetHeaderSize = 14
+	DefaultMRU                   = 65536
+	DefaultMTU                   = 1500
+	DefaultTTL                   = 64
+	DefaultPostProcessBufferSize = 16
+	EthernetHeaderSize           = 14
 )
 
 var (
-	UnsupportedFeatureError  = errors.New("gophertun: feature unsupported on this platform")
-	UnsupportedProtocolError = errors.New("gophertun: protocol unsupported")
+	ErrUnsupportedFeature  = errors.New("gophertun: feature unsupported on this platform")
+	ErrUnsupportedProtocol = errors.New("gophertun: protocol unsupported")
 )
