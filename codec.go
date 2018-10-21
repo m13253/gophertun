@@ -334,6 +334,9 @@ func (c *CodecIPv4) Encode() ([]byte, error) {
 	}
 	c.HeaderLength = uint8(headerLength)
 
+	if wph, ok := c.Payload.(wantPseudoHeader); ok {
+		wph.setPseudoHeader(c)
+	}
 	payload, err := c.Payload.Encode()
 	if err != nil {
 		return nil, err
@@ -429,6 +432,9 @@ func (c *CodecIPv6) Decode(buf []byte) error {
 func (c *CodecIPv6) Encode() ([]byte, error) {
 	c.Version = 6
 
+	if wph, ok := c.Payload.(wantPseudoHeader); ok {
+		wph.setPseudoHeader(c)
+	}
 	payload, err := c.Payload.Encode()
 	if err != nil {
 		return nil, err
@@ -514,6 +520,9 @@ func (c *CodecIPv6HopByHop) Encode() ([]byte, error) {
 	}
 	c.HeaderLength = uint16(headerLength)
 
+	if wph, ok := c.Payload.(wantPseudoHeader); ok {
+		wph.setPseudoHeader(c.pseudoHeader)
+	}
 	payload, err := c.Payload.Encode()
 	if err != nil {
 		return nil, err
@@ -642,6 +651,9 @@ func (c *CodecIPv6Fragment) Encode() ([]byte, error) {
 		return nil, errors.New("gophertun: invalid IPv6-Fragment header")
 	}
 
+	if wph, ok := c.Payload.(wantPseudoHeader); ok {
+		wph.setPseudoHeader(c.pseudoHeader)
+	}
 	payload, err := c.Payload.Encode()
 	if err != nil {
 		return nil, err
@@ -701,7 +713,7 @@ func (c *CodecICMP) Encode() ([]byte, error) {
 	copy(buf[8:], payload)
 
 	c.Checksum = checksum(buf)
-	binary.BigEndian.PutUint16(buf[:4], c.Checksum)
+	binary.BigEndian.PutUint16(buf[2:4], c.Checksum)
 
 	return buf, nil
 }
@@ -767,7 +779,7 @@ func (c *CodecICMPv6) Encode() ([]byte, error) {
 		pseudoHeader = append(pseudoHeader, buf...)
 		c.Checksum = checksum(pseudoHeader)
 	}
-	binary.BigEndian.PutUint16(buf[:4], c.Checksum)
+	binary.BigEndian.PutUint16(buf[2:4], c.Checksum)
 
 	return buf, nil
 }

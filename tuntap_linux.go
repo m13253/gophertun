@@ -209,7 +209,11 @@ func (t *TunTapImpl) Read() (*Packet, error) {
 	case p := <-t.buffer:
 		return p, nil
 	default:
-		return readCook(t.readRaw, t.writeRaw, t.hwAddr, t.buffer)
+		hwAddr := net.HardwareAddr(nil)
+		if t.OutputFormat() != t.NativeFormat() {
+			hwAddr = t.hwAddr
+		}
+		return readCook(t.readRaw, t.writeRaw, hwAddr, t.buffer)
 	}
 }
 
@@ -255,10 +259,15 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 }
 
 func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
+	mtuFunc := (func() (int, error))(nil)
 	if pmtud {
-		return writeCook(t.writeRaw, packet, t.MTU, t.hwAddr, t.buffer)
+		mtuFunc = t.MTU
 	}
-	return writeCook(t.writeRaw, packet, nil, t.hwAddr, t.buffer)
+	hwAddr := net.HardwareAddr(nil)
+	if t.OutputFormat() != t.NativeFormat() {
+		hwAddr = t.hwAddr
+	}
+	return writeCook(t.writeRaw, packet, mtuFunc, hwAddr, t.buffer)
 }
 
 func (t *TunTapImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
