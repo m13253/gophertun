@@ -58,3 +58,19 @@ type (
 var (
 	_TUNSETIFF = _IOW('T', 202, 4)
 )
+
+func _IO(group, num uint8) uintptr {
+	return (uintptr(group) << 8) | uintptr(num)
+}
+
+func _IOR(group, num uint8, len uintptr) uintptr {
+	return 0x80000000 | ((len & 0x3fff) << 16) | (uintptr(group) << 8) | uintptr(num)
+}
+
+func _IOW(group, num uint8, len uintptr) uintptr {
+	return 0x40000000 | ((len & 0x3fff) << 16) | (uintptr(group) << 8) | uintptr(num)
+}
+
+func _IOWR(group, num uint8, len uintptr) uintptr {
+	return 0xc0000000 | ((len & 0x3fff) << 16) | (uintptr(group) << 8) | uintptr(num)
+}

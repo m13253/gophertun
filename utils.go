@@ -24,6 +24,8 @@
 
 package gophertun
 
+import "net"
+
 func dupBytes(bytes []byte) []byte {
 	if len(bytes) == 0 {
 		return nil
@@ -47,4 +49,60 @@ func checksum(buf []byte) uint16 {
 		sum += uint32(buf[len(buf)-1])
 	}
 	return ^uint16(sum>>16 + sum)
+}
+
+func simplifyIPNet(ipnet net.IPNet) *net.IPNet {
+	if ipv4net := ipnetTo4(ipnet); ipv4net != nil {
+		return ipv4net
+	}
+	if ipv6net := ipnetTo16(ipnet); ipv6net != nil {
+		return ipv6net
+	}
+	return nil
+}
+
+func ipnetTo4(ipnet net.IPNet) *net.IPNet {
+	if ipv4 := ipnet.IP.To4(); ipv4 != nil {
+		ones, bits := ipnet.Mask.Size()
+		if bits < 32 {
+			return nil
+		}
+		if ones == 0 {
+			return &net.IPNet{
+				IP:   ipv4,
+				Mask: net.CIDRMask(0, 32),
+			}
+		}
+		if bits-ones > 32 {
+			return nil
+		}
+		return &net.IPNet{
+			IP:   ipv4,
+			Mask: net.CIDRMask(ones+32-bits, 32),
+		}
+	}
+	return nil
+}
+
+func ipnetTo16(ipnet net.IPNet) *net.IPNet {
+	if ip := ipnet.IP.To16(); ip != nil {
+		ones, bits := ipnet.Mask.Size()
+		if bits < 32 {
+			return nil
+		}
+		if ones == 0 {
+			return &net.IPNet{
+				IP:   ip,
+				Mask: net.CIDRMask(0, 128),
+			}
+		}
+		if bits-ones > 128 {
+			return nil
+		}
+		return &net.IPNet{
+			IP:   ip,
+			Mask: net.CIDRMask(ones+128-bits, 128),
+		}
+	}
+	return nil
 }

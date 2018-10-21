@@ -27,7 +27,9 @@
 package gophertun
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -39,6 +41,8 @@ import (
 
 type TunTapImpl struct {
 	f            *os.File
+	ifreqSock    *os.File
+	ifreqSockIn6 *os.File
 	outputFormat PayloadFormat
 	hwAddr       net.HardwareAddr
 }
@@ -49,11 +53,19 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		return nil, os.NewSyscallError("socket", err)
 	}
 
+	err = syscall.SetNonblock(fd, true)
+	if err != nil {
+		syscall.Close(fd)
+		return nil, err
+	}
+	syscall.CloseOnExec(fd)
+	f := os.NewFile(uintptr(fd), "")
+
 	info := &ctl_info{}
 	copy(info.ctl_name[:], "com.apple.net.utun_control")
-	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), _CTLIOCGINFO, uintptr(unsafe.Pointer(info)))
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), _CTLIOCGINFO, uintptr(unsafe.Pointer(info)))
 	if r1 != 0 {
-		syscall.Close(fd)
+		f.Close()
 		return nil, os.NewSyscallError("ioctl (CTLIOCGINFO)", err)
 	}
 
@@ -70,11 +82,11 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 		sc.sc_unit = uint32(utunID + 1)
 	}
 
-	r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
+	r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, f.Fd(), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
 	if r1 != 0 {
 		if errno, ok := err.(syscall.Errno); ok && errno == syscall.EBUSY && c.AllowNameSuffix {
 			sc.sc_unit = 0
-			r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
+			r1, _, err = syscall.Syscall(syscall.SYS_CONNECT, f.Fd(), uintptr(unsafe.Pointer(sc)), unsafe.Sizeof(*sc))
 			if r1 != 0 {
 				return nil, os.NewSyscallError("connect", err)
 			}
@@ -85,40 +97,115 @@ func (c *TunTapConfig) Create() (Tunnel, error) {
 
 	if c.ExtraFlags != 0 {
 		extraFlags := uint32(c.ExtraFlags)
-		r1, _, err := syscall.Syscall6(syscall.SYS_SETSOCKOPT, uintptr(fd), _SYSPROTO_CONTROL, _UTUN_OPT_FLAGS, uintptr(unsafe.Pointer(&extraFlags)), unsafe.Sizeof(extraFlags), 0)
+		r1, _, err := syscall.Syscall6(syscall.SYS_SETSOCKOPT, f.Fd(), _SYSPROTO_CONTROL, _UTUN_OPT_FLAGS, uintptr(unsafe.Pointer(&extraFlags)), unsafe.Sizeof(extraFlags), 0)
 		if r1 != 0 {
-			syscall.Close(fd)
+			f.Close()
 			return nil, os.NewSyscallError("setsockopt", err)
 		}
 	}
 
-	name, err := tuntapName(uintptr(fd))
+	ifreqSock, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, 0)
 	if err != nil {
-		syscall.Close(fd)
-		return nil, err
+		f.Close()
+		return nil, os.NewSyscallError("socket", err)
 	}
-
-	err = syscall.SetNonblock(fd, true)
+	ifreqSockIn6, err := syscall.Socket(syscall.AF_INET6, syscall.SOCK_DGRAM, 0)
 	if err != nil {
-		syscall.Close(fd)
-		return nil, err
+		syscall.Close(ifreqSock)
+		f.Close()
+		return nil, os.NewSyscallError("socket", err)
 	}
-	syscall.CloseOnExec(fd)
-
-	f := os.NewFile(uintptr(fd), "/dev/net/"+name)
 
 	t := &TunTapImpl{
-		f: f,
+		f:            f,
+		ifreqSock:    os.NewFile(uintptr(ifreqSock), ""),
+		ifreqSockIn6: os.NewFile(uintptr(ifreqSockIn6), ""),
 	}
-
 	return t, nil
 }
 
 func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
-	return 0, UnsupportedFeatureError
+	name, err := t.Name()
+	if err != nil {
+		return 0, err
+	}
+
+	for i, addr := range addresses {
+		if addr.Net == nil {
+			return i, errors.New("gophertun: invalid IP address: <nil>")
+		}
+		addrNet := simplifyIPNet(*addr.Net)
+		if addrNet == nil {
+			return i, fmt.Errorf("gophertun: invalid IP address: %s", *addr.Net)
+		}
+
+		addrPeer := addrNet
+		if addr.Peer != nil {
+			addrPeer = simplifyIPNet(*addr.Peer)
+			if addrPeer == nil {
+				return i, fmt.Errorf("gophertun: invalid IP peer: %s", *addr.Peer)
+			}
+		}
+
+		if len(addrNet.IP) == 4 && len(addrPeer.IP) == 4 {
+			ifreq := &ifaliasreq{}
+			copy(ifreq.ifra_name[:], name)
+			ifreq.ifra_addr.sin_len = uint8(unsafe.Sizeof(ifreq.ifra_addr))
+			ifreq.ifra_addr.sin_family = syscall.AF_INET
+			copy(ifreq.ifra_addr.sin_addr[:], addrNet.IP)
+			ifreq.ifra_broadaddr.sin_len = uint8(unsafe.Sizeof(ifreq.ifra_broadaddr))
+			ifreq.ifra_broadaddr.sin_family = syscall.AF_INET
+			copy(ifreq.ifra_broadaddr.sin_addr[:], addrPeer.IP)
+			ifreq.ifra_mask.sin_len = uint8(unsafe.Sizeof(ifreq.ifra_mask))
+			ifreq.ifra_mask.sin_family = syscall.AF_INET
+			copy(ifreq.ifra_mask.sin_addr[:], addrPeer.Mask)
+
+			r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.ifreqSock.Fd(), unix.SIOCAIFADDR, uintptr(unsafe.Pointer(ifreq)))
+			if r1 != 0 {
+				return i, os.NewSyscallError("ioctl (SIOCAIFADDR)", err)
+			}
+		} else {
+			addrNet = ipnetTo16(*addr.Net)
+			if addrNet == nil {
+				return i, fmt.Errorf("gophertun: invalid IP address: %s", *addr.Net)
+			}
+			if addr.Peer != nil {
+				addrPeer = ipnetTo16(*addr.Peer)
+				if addrPeer == nil {
+					return i, fmt.Errorf("gophertun: invalid IP peer: %s", *addr.Peer)
+				}
+			} else {
+				addrPeer = addrNet
+			}
+
+			ifreq := &in6_aliasreq{}
+			copy(ifreq.ifra_name[:], name)
+			ifreq.ifra_addr.sin6_len = uint8(unsafe.Sizeof(ifreq.ifra_addr))
+			ifreq.ifra_addr.sin6_family = syscall.AF_INET6
+			copy(ifreq.ifra_addr.sin6_addr[:], addrNet.IP)
+			if bytes.Equal(addrPeer.Mask, net.CIDRMask(128, 128)) {
+				ifreq.ifra_dstaddr.sin6_len = uint8(unsafe.Sizeof(ifreq.ifra_dstaddr))
+				ifreq.ifra_dstaddr.sin6_family = syscall.AF_INET6
+				copy(ifreq.ifra_dstaddr.sin6_addr[:], addrPeer.IP)
+			}
+			ifreq.ifra_prefixmask.sin6_len = uint8(unsafe.Sizeof(ifreq.ifra_prefixmask))
+			ifreq.ifra_prefixmask.sin6_family = syscall.AF_INET6
+			copy(ifreq.ifra_prefixmask.sin6_addr[:], addrPeer.Mask)
+			ifreq.ia6t_vltime = _ND6_INFINITE_LIFETIME
+			ifreq.ia6t_pltime = _ND6_INFINITE_LIFETIME
+
+			r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.ifreqSockIn6.Fd(), _SIOCAIFADDR_IN6, uintptr(unsafe.Pointer(ifreq)))
+			if r1 != 0 {
+				return i, os.NewSyscallError("ioctl (SIOCAIFADDR_IN6)", err)
+			}
+		}
+	}
+	return len(addresses), nil
 }
 
 func (t *TunTapImpl) Close() error {
+	_ = t.ifreqSockIn6.Close()
+	_ = t.ifreqSock.Close()
 	return t.f.Close()
 }
 
@@ -133,7 +220,7 @@ func (t *TunTapImpl) MTU() (int, error) {
 	if r1 != 0 {
 		return DefaultMTU, os.NewSyscallError("ioctl (SIOCGIFMTU)", err)
 	}
-	return int(ifreq.ifru_mtu), nil
+	return int(ifreq.ifr_mtu), nil
 }
 
 func tuntapName(fd uintptr) (string, error) {
@@ -164,6 +251,23 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 		return UnsupportedFeatureError
 	}
 	t.hwAddr = generateMACAddress()
+
+	name, err := t.Name()
+	if err != nil {
+		return err
+	}
+
+	ifreq := &ifreq_flags{}
+	copy(ifreq.ifr_name[:], name)
+	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCGIFFLAGS, uintptr(unsafe.Pointer(ifreq)))
+	if r1 != 0 {
+		return os.NewSyscallError("ioctl (SIOCGIFFLAGS)", err)
+	}
+	ifreq.ifr_flags |= syscall.IFF_UP
+	r1, _, err = syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCSIFFLAGS, uintptr(unsafe.Pointer(ifreq)))
+	if r1 != 0 {
+		return os.NewSyscallError("ioctl (SIOCSIFFLAGS)", err)
+	}
 	return nil
 }
 
@@ -215,7 +319,7 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 		return err
 	}
 	copy(ifreq.ifr_name[:], name)
-	ifreq.ifru_mtu = int32(mtu)
+	ifreq.ifr_mtu = int32(mtu)
 	r1, _, err := syscall.Syscall(syscall.SYS_IOCTL, t.f.Fd(), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(ifreq)))
 	if r1 != 0 {
 		return os.NewSyscallError("ioctl (SIOCSIFMTU)", err)

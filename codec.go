@@ -342,8 +342,8 @@ func (c *CodecIPv4) Encode() ([]byte, error) {
 	buf[7] = uint8(c.FragmentOffset / 8)
 	buf[8] = c.TTL
 	buf[9] = c.Protocol
-	copy(buf[12:16], c.Source)
-	copy(buf[16:20], c.Destination)
+	copy(buf[12:16], c.Source.To4())
+	copy(buf[16:20], c.Destination.To4())
 	copy(buf[20:c.HeaderLength], c.Extra1)
 	copy(buf[c.HeaderLength:c.TotalLength], payload)
 	copy(buf[c.TotalLength:], c.Extra2)
@@ -356,8 +356,8 @@ func (c *CodecIPv4) Encode() ([]byte, error) {
 
 func (c *CodecIPv4) encodePseudoHeader() ([]byte, error) {
 	buf := make([]byte, 12)
-	copy(buf[:4], c.Source)
-	copy(buf[4:8], c.Destination)
+	copy(buf[:4], c.Source.To4())
+	copy(buf[4:8], c.Destination.To4())
 	buf[9] = c.Protocol
 	return buf, nil
 }
@@ -433,8 +433,8 @@ func (c *CodecIPv6) Encode() ([]byte, error) {
 	binary.BigEndian.PutUint16(buf[4:6], c.PayloadLength)
 	buf[6] = c.NextHeader
 	buf[7] = c.HopLimit
-	copy(buf[8:24], c.Source)
-	copy(buf[24:40], c.Destination)
+	copy(buf[8:24], c.Source.To16())
+	copy(buf[24:40], c.Destination.To16())
 	copy(buf[40:40+int(c.PayloadLength)], payload)
 	copy(buf[40+int(c.PayloadLength):], c.Extra)
 
@@ -443,8 +443,8 @@ func (c *CodecIPv6) Encode() ([]byte, error) {
 
 func (c *CodecIPv6) encodePseudoHeader() ([]byte, error) {
 	buf := make([]byte, 40)
-	copy(buf[:16], c.Source)
-	copy(buf[16:32], c.Destination)
+	copy(buf[:16], c.Source.To16())
+	copy(buf[16:32], c.Destination.To16())
 	buf[39] = c.NextHeader
 	return buf, nil
 }

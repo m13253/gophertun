@@ -27,10 +27,22 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 
 	gophertun "../.."
 )
+
+func parseCIDR(cidr string) *net.IPNet {
+	ip, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		panic(err)
+	}
+	return &net.IPNet{
+		IP:   ip,
+		Mask: ipnet.Mask,
+	}
+}
 
 func main() {
 	c := &gophertun.TunTapConfig{
@@ -50,11 +62,29 @@ func main() {
 		log.Fatalln(err)
 	}
 	fmt.Printf("Device: %s\n", name)
+	err = t.SetMTU(65535)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	mtu, err := t.MTU()
 	if err != nil {
 		log.Fatalln(err)
 	}
 	fmt.Printf("MTU:    %d\n", mtu)
+	addresses := []*gophertun.IPAddress{
+		&gophertun.IPAddress{
+			Net:  parseCIDR("10.42.0.2/24"),
+			Peer: parseCIDR("10.42.0.3/24"),
+		},
+		&gophertun.IPAddress{
+			Net:  parseCIDR("fd42::2/64"),
+			Peer: parseCIDR("fd42::3/64"),
+		},
+	}
+	n, err := t.AddIPAddresses(addresses)
+	if err != nil {
+		log.Fatalf("Error setting addr[%d]: %s\n", n, err)
+	}
 	err = t.Open(gophertun.FormatEthernet)
 	for {
 		p, err := t.Read()

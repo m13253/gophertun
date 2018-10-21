@@ -203,7 +203,7 @@ func (t *TunTapImpl) RawFile() *os.File {
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {
-	buf := make([]byte, DefaultMRU+4)
+	buf := make([]byte, DefaultMRU+EthernetHeaderSize+4)
 retry:
 	n, err := t.f.Read(buf[:])
 	if err != nil {
