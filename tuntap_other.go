@@ -27,10 +27,13 @@
 package gophertun
 
 import (
+	"net"
 	"os"
 )
 
 type TunTapImpl struct {
+	hwAddr net.HardwareAddr
+	buffer chan *Packet
 }
 
 func (c *TunTapConfig) Create() (Tunnel, error) {
@@ -69,7 +72,7 @@ func (t *TunTapImpl) RawFile() (*os.File, error) {
 	return nil, ErrUnsupportedFeature
 }
 
-func (t *TunTapImpl) Read() (*Packet, error) {
+func (t *TunTapImpl) readRaw() (*Packet, error) {
 	return nil, ErrUnsupportedFeature
 }
 
@@ -77,6 +80,6 @@ func (t *TunTapImpl) SetMTU(mtu int) error {
 	return ErrUnsupportedFeature
 }
 
-func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
-	return ErrUnsupportedFeature
+func (t *TunTapImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
+	return false, ErrUnsupportedFeature
 }

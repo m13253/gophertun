@@ -24,9 +24,36 @@
 
 package gophertun
 
+import "net"
+
 type TunTapConfig struct {
 	NameHint              string
 	AllowNameSuffix       bool
 	PreferredNativeFormat PayloadFormat
 	ExtraFlags            uint32
+}
+
+func (t *TunTapImpl) Read() (*Packet, error) {
+	select {
+	case p := <-t.buffer:
+		return p, nil
+	default:
+		hwAddr := net.HardwareAddr(nil)
+		if t.OutputFormat() != t.NativeFormat() {
+			hwAddr = t.hwAddr
+		}
+		return readCook(t.readRaw, t.writeRaw, hwAddr, t.buffer)
+	}
+}
+
+func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
+	mtuFunc := (func() (int, error))(nil)
+	if pmtud {
+		mtuFunc = t.MTU
+	}
+	hwAddr := net.HardwareAddr(nil)
+	if t.OutputFormat() != t.NativeFormat() {
+		hwAddr = t.hwAddr
+	}
+	return writeCook(t.writeRaw, packet, mtuFunc, hwAddr, t.buffer)
 }
