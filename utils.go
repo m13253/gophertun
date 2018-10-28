@@ -24,7 +24,12 @@
 
 package gophertun
 
-import "net"
+import (
+	"net"
+	"os"
+	"runtime"
+	"syscall"
+)
 
 func dupBytes(bytes []byte) []byte {
 	if len(bytes) == 0 {
@@ -105,4 +110,27 @@ func ipnetTo16(ipnet net.IPNet) *net.IPNet {
 		}
 	}
 	return nil
+}
+
+func isErrorEMSGSIZE(err error) bool {
+	errOpError, ok := err.(*net.OpError)
+	if !ok {
+		return false
+	}
+	errSyscallError, ok := errOpError.Err.(*os.SyscallError)
+	if !ok {
+		return false
+	}
+	errErrno, ok := errSyscallError.Err.(syscall.Errno)
+	if !ok {
+		return false
+	}
+	if errErrno == syscall.EMSGSIZE {
+		return true
+	}
+	const WSAEMSGSIZE = 10040
+	if runtime.GOOS == "windows" && errErrno == WSAEMSGSIZE {
+		return true
+	}
+	return false
 }

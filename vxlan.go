@@ -187,7 +187,7 @@ func (t *VxlanImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
 	copy(buf[8:], packet.Payload)
 	_, err = t.conn.WriteTo(buf, t.vtep)
 	if err != nil {
-		return false, err
+		return isErrorEMSGSIZE(err), err
 	}
 	return false, nil
 }
