@@ -614,6 +614,7 @@ func (c *CodecIPv6HopByHopOption) String() string {
 	}
 	return fmt.Sprintf("{Type:%d, Len:%d, %v}, %v", c.Type, c.DataLength, c.Data, c.NextOption)
 }
+
 func (c *CodecIPv6Fragment) Decode(buf []byte) error {
 	if len(buf) < 8 {
 		return errors.New("gophertun: invalid IPv6-Fragment header")
@@ -625,14 +626,18 @@ func (c *CodecIPv6Fragment) Decode(buf []byte) error {
 	c.MoreFragment = (buf[3] & 0x1) != 0
 	c.Identification = binary.BigEndian.Uint32(buf[4:8])
 
-	switch c.NextHeader {
-	case 0:
-		c.Payload = &CodecIPv6HopByHop{}
-	case 44:
-		c.Payload = &CodecIPv6Fragment{}
-	case 58:
-		c.Payload = &CodecICMPv6{}
-	default:
+	if c.FragmentOffset == 0 && !c.MoreFragment {
+		switch c.NextHeader {
+		case 0:
+			c.Payload = &CodecIPv6HopByHop{}
+		case 44:
+			c.Payload = &CodecIPv6Fragment{}
+		case 58:
+			c.Payload = &CodecICMPv6{}
+		default:
+			c.Payload = &CodecRaw{}
+		}
+	} else {
 		c.Payload = &CodecRaw{}
 	}
 	if wph, ok := c.Payload.(wantPseudoHeader); ok {

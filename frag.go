@@ -66,7 +66,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 			for layer := packet.Payload; layer != nil; layer = layer.NextLayer() {
 				if icmpv6, ok := layer.(*CodecICMPv6); ok {
 					if icmpv6.Type < 128 {
-						return nil, nil
+						return truncateIPv6Packet(p, packet, mtu), nil
 					}
 				}
 			}
@@ -104,7 +104,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 			for layer := packet.Payload; layer != nil; layer = layer.NextLayer() {
 				if icmpv6, ok := layer.(*CodecICMPv6); ok {
 					if icmpv6.Type < 128 {
-						return nil, nil
+						return truncateIPv6Packet(p, packet, mtu), nil
 					}
 				}
 			}
@@ -361,6 +361,28 @@ func fragmentIPv4Packet(p *Packet, c Codec, mtu int) (out []*Packet) {
 			})
 		}
 		return out
+
+	default:
+		panic(ErrUnsupportedProtocol)
+	}
+}
+
+func truncateIPv6Packet(p *Packet, c Codec, mtu int) (out []*Packet) {
+	switch p.Format {
+
+	case FormatIP:
+		return []*Packet{&Packet{
+			Format:    FormatIP,
+			EtherType: EtherTypeIPv6,
+			Payload:   p.Payload[:mtu],
+		}}
+
+	case FormatEthernet:
+		return []*Packet{&Packet{
+			Format:    FormatEthernet,
+			EtherType: EtherTypeIPv6,
+			Payload:   p.Payload[:mtu+EthernetHeaderSize],
+		}}
 
 	default:
 		panic(ErrUnsupportedProtocol)
