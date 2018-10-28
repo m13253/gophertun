@@ -38,7 +38,7 @@ type Tunnel interface {
 	NativeFormat() PayloadFormat
 	Open(outputFormat PayloadFormat) error
 	OutputFormat() PayloadFormat
-	RawFile() *os.File
+	RawFile() (*os.File, error)
 	Read() (*Packet, error)
 	SetMTU(mtu int) error
 	Write(packet *Packet, pmtud bool) error

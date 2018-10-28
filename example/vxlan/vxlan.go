@@ -1,5 +1,3 @@
-// +build windows
-
 /*
   MIT License
 
@@ -24,59 +22,51 @@
   SOFTWARE.
 */
 
-package gophertun
+package main
 
 import (
-	"os"
+	"fmt"
+	"log"
+	"net"
+
+	gophertun "../.."
 )
 
-type TunTapImpl struct {
-}
-
-func (c *TunTapConfig) Create() (Tunnel, error) {
-	return nil, ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
-	return 0, ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) Close() error {
-	return ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) MTU() (int, error) {
-	return DefaultMTU, ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) Name() (string, error) {
-	return "", ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) NativeFormat() PayloadFormat {
-	return FormatUnknown
-}
-
-func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
-	return ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) OutputFormat() PayloadFormat {
-	return FormatUnknown
-}
-
-func (t *TunTapImpl) RawFile() (*os.File, error) {
-	return nil, ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) Read() (*Packet, error) {
-	return nil, ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) SetMTU(mtu int) error {
-	return ErrUnsupportedFeature
-}
-
-func (t *TunTapImpl) Write(packet *Packet, pmtud bool) error {
-	return ErrUnsupportedFeature
+func main() {
+	l, err := net.ListenPacket("udp", "[ff02::15c]:4789")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	vetp, err := net.ResolveUDPAddr("udp", "[ff02::15c]:4789")
+	c := &gophertun.VxlanConfig{
+		VxlanConn:           l,
+		VxlanNetworkID:      64384,
+		VxlanTunnelEndpoint: vetp,
+	}
+	t, err := c.Create()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer t.Close()
+	name, err := t.Name()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Printf("Tunnel: %s\n", name)
+	mtu, err := t.MTU()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	fmt.Printf("MTU:    %d\n", mtu)
+	err = t.Open(gophertun.FormatEthernet)
+	for {
+		p, err := t.Read()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if p == nil {
+			break
+		}
+		fmt.Printf("EtherType: %04x Payload: %x Extra: %x\n", p.EtherType, p.Payload, p.Extra)
+	}
 }

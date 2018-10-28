@@ -65,8 +65,8 @@ func (t *TunTapImpl) OutputFormat() PayloadFormat {
 	return FormatUnknown
 }
 
-func (t *TunTapImpl) RawFile() *os.File {
-	return nil
+func (t *TunTapImpl) RawFile() (*os.File, error) {
+	return nil, ErrUnsupportedFeature
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {

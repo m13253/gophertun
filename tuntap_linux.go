@@ -200,8 +200,8 @@ func (t *TunTapImpl) OutputFormat() PayloadFormat {
 	return t.outputFormat
 }
 
-func (t *TunTapImpl) RawFile() *os.File {
-	return t.f
+func (t *TunTapImpl) RawFile() (*os.File, error) {
+	return t.f, nil
 }
 
 func (t *TunTapImpl) Read() (*Packet, error) {
@@ -226,6 +226,9 @@ retry:
 	}
 	if n == 0 {
 		return nil, nil
+	}
+	if n < 4 {
+		goto retry
 	}
 	packet := &Packet{
 		Format:    t.nativeFormat,
