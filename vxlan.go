@@ -131,7 +131,7 @@ retry:
 	if n < 8 {
 		goto retry
 	}
-	if buf[0]&0x04 == 0 || binary.BigEndian.Uint32(buf[4:8])>>8 != t.vni {
+	if buf[0]&0x08 == 0 || binary.BigEndian.Uint32(buf[4:8])>>8 != t.vni {
 		goto retry
 	}
 	etherType := EtherType(0)
@@ -141,8 +141,7 @@ retry:
 	packet := &Packet{
 		Format:    FormatEthernet,
 		EtherType: etherType,
-		Payload:   buf[4:n],
-		Extra:     buf[:2],
+		Payload:   buf[8:n],
 	}
 	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
 	if err != nil {
@@ -183,7 +182,7 @@ func (t *VxlanImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
 		return false, nil
 	}
 	buf := make([]byte, len(packet.Payload)+8)
-	buf[0] = 0x04
+	buf[0] = 0x08
 	binary.BigEndian.PutUint32(buf[4:8], t.vni<<8)
 	copy(buf[8:], packet.Payload)
 	_, err = t.conn.WriteTo(buf, t.vtep)

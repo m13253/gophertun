@@ -28,20 +28,48 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strconv"
 
 	gophertun "../.."
 )
 
 func main() {
-	l, err := net.ListenPacket("udp", "[ff02::15c]:4789")
+	var err error
+	listenAddr, vni, vtepAddr := "[ff02::15c]:4789", uint64(64384), "[ff02::15c]:4789"
+	if len(os.Args) > 1 {
+		listenAddr = os.Args[1]
+	}
+	if len(os.Args) > 2 {
+		vni, err = strconv.ParseUint(os.Args[2], 0, 24)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+	if len(os.Args) > 3 {
+		vtepAddr = os.Args[3]
+	}
+	laddr, err := net.ResolveUDPAddr("udp", listenAddr)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	vetp, err := net.ResolveUDPAddr("udp", "[ff02::15c]:4789")
+	var conn net.PacketConn
+	if laddr.IP.IsMulticast() {
+		conn, err = net.ListenMulticastUDP("udp", nil, laddr)
+	} else {
+		conn, err = net.ListenUDP("udp", laddr)
+	}
+	if err != nil {
+		log.Fatalln(err)
+	}
+	vtep, err := net.ResolveUDPAddr("udp", vtepAddr)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	c := &gophertun.VxlanConfig{
-		VxlanConn:           l,
-		VxlanNetworkID:      64384,
-		VxlanTunnelEndpoint: vetp,
+		VxlanConn:           conn,
+		VxlanNetworkID:      uint32(vni),
+		VxlanTunnelEndpoint: vtep,
 	}
 	t, err := c.Create()
 	if err != nil {
@@ -52,13 +80,15 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	fmt.Printf("Tunnel: %s\n", name)
+	fmt.Printf("Listen: %s\n", name)
+	fmt.Printf("VNI:    %d\n", vni)
+	fmt.Printf("VTEP:   %s\n", vtep)
 	mtu, err := t.MTU()
 	if err != nil {
 		log.Fatalln(err)
 	}
 	fmt.Printf("MTU:    %d\n", mtu)
-	err = t.Open(gophertun.FormatEthernet)
+	err = t.Open(gophertun.FormatIP)
 	for {
 		p, err := t.Read()
 		if err != nil {
