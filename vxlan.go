@@ -174,7 +174,7 @@ func (t *VxlanImpl) Write(packet *Packet, pmtud bool) error {
 }
 
 func (t *VxlanImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
-	packet, err = packet.ConvertTo(t.outputFormat, t.hwAddr)
+	packet, err = packet.ConvertTo(FormatEthernet, t.hwAddr)
 	if err != nil {
 		return false, err
 	}
