@@ -65,7 +65,7 @@ func writeCook(writeRaw func(*Packet) (bool, error), p *Packet, mtuFunc func() (
 	mtu := 0
 	for _, i := range out {
 		needFrag, err := writeRaw(i)
-		if err != nil {
+		if !needFrag && err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}

@@ -46,6 +46,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 			err := packet.Decode(p.Payload)
 			if err != nil {
 				log.Printf("Warning: %s\n", err)
+				return nil, nil
 			}
 			if packet.Flags&0x2 != 0 {
 				if icmp, ok := packet.Payload.(*CodecICMP); ok {
@@ -62,6 +63,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 			err := packet.Decode(p.Payload)
 			if err != nil {
 				log.Printf("Warning: %s\n", err)
+				return nil, nil
 			}
 			for layer := packet.Payload; layer != nil; layer = layer.NextLayer() {
 				if icmpv6, ok := layer.(*CodecICMPv6); ok {
@@ -84,6 +86,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 		err := frame.Decode(p.Payload)
 		if err != nil {
 			log.Printf("Warning: %s\n", err)
+			return nil, nil
 		}
 
 		switch frame.Payload.(type) {
@@ -284,13 +287,20 @@ func fragmentIPv4Packet(p *Packet, c Codec, mtu int) (out []*Packet) {
 			return nil
 		}
 		fragmentSize := (mtu - int(cIPv4.HeaderLength)) & -8
+		payload, err := cIPv4.Payload.Encode()
+		if err != nil {
+			panic(err)
+		}
 		payloadOffset := int(cIPv4.FragmentOffset)
 		payloadLength := int(cIPv4.FragmentOffset) + int(cIPv4.TotalLength) - int(cIPv4.HeaderLength)
 		out = make([]*Packet, 0, (payloadLength-payloadOffset)/fragmentSize+1)
 		for offset := payloadOffset; offset < payloadLength; offset += fragmentSize {
 			flags := cIPv4.Flags
+			segmentPayload := payload[offset-payloadOffset:]
+			log.Println(offset, fragmentSize, payloadLength)
 			if offset+fragmentSize < payloadLength {
 				flags |= 0x1
+				segmentPayload = segmentPayload[:fragmentSize]
 			}
 			segment := &CodecIPv4{
 				Version:        4,
@@ -304,6 +314,7 @@ func fragmentIPv4Packet(p *Packet, c Codec, mtu int) (out []*Packet) {
 				Source:         cIPv4.Source,
 				Destination:    cIPv4.Destination,
 				Extra1:         cIPv4.Extra1,
+				Payload:        &CodecRaw{segmentPayload, nil},
 			}
 			segmentPacket, err := segment.Encode()
 			if err != nil {
