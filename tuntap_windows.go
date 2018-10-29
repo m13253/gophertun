@@ -29,6 +29,7 @@ package gophertun
 import (
 	"encoding/binary"
 	"errors"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -49,6 +50,7 @@ type TunTapImpl struct {
 
 func (c *TunTapConfig) findAllTunnels() ([]string, error) {
 	adapterIDRegexp := regexp.MustCompile(`\d{4}`)
+	componentIDRegexp := regexp.MustCompile(`tap\d{4}`)
 
 	netprop, err := registry.OpenKey(registry.LOCAL_MACHINE, _ADAPTER_KEY, registry.ENUMERATE_SUB_KEYS)
 	if err != nil {
@@ -62,10 +64,14 @@ func (c *TunTapConfig) findAllTunnels() ([]string, error) {
 		}
 		adapter, err := registry.OpenKey(registry.LOCAL_MACHINE, filepath.Join(_ADAPTER_KEY, i), registry.QUERY_VALUE)
 		if err != nil {
+			log.Printf("Warning: gophertun: %s\n", err)
 			continue
 		}
 		componentID, _, err := adapter.GetStringValue("ComponentId")
-		if componentID != "tap0801" || err != nil {
+		if err != nil {
+			log.Printf("Warning: gophertun: %s\n", err)
+		}
+		if !componentIDRegexp.MatchString(componentID) {
 			continue
 		}
 		netCfgInstanceID, _, err := adapter.GetStringValue("NetCfgInstanceId")
@@ -116,13 +122,17 @@ func (t *TunTapImpl) AddIPAddresses(addresses []*IPAddress) (int, error) {
 }
 
 func (t *TunTapImpl) Close() error {
+	mediaStatus := int32(0)
+	bytesReturned := uint32(0)
+	_ = syscall.DeviceIoControl(syscall.Handle(t.f.Fd()), _TAP_WIN_IOCTL_SET_MEDIA_STATUS, (*byte)(unsafe.Pointer(&mediaStatus)), uint32(unsafe.Sizeof(mediaStatus)), (*byte)(unsafe.Pointer(&mediaStatus)), uint32(unsafe.Sizeof(mediaStatus)), &bytesReturned, nil)
+
 	return t.f.Close()
 }
 
 func (t *TunTapImpl) MTU() (int, error) {
 	mtu := uint32(0)
 	bytesReturned := uint32(0)
-	err := syscall.DeviceIoControl(syscall.Handle(t.f.Fd()), _TAP_WIN_IOCTL_GET_MTU, (*byte)(unsafe.Pointer(&mtu)), uint32(unsafe.Sizeof(mtu)), nil, 0, &bytesReturned, nil)
+	err := syscall.DeviceIoControl(syscall.Handle(t.f.Fd()), _TAP_WIN_IOCTL_GET_MTU, (*byte)(unsafe.Pointer(&mtu)), uint32(unsafe.Sizeof(mtu)), (*byte)(unsafe.Pointer(&mtu)), uint32(unsafe.Sizeof(mtu)), &bytesReturned, nil)
 	if err != nil {
 		return DefaultMTU, os.NewSyscallError("DeviceIoControl (TAP_WIN_IOCTL_GET_MTU)", err)
 	}
@@ -150,7 +160,7 @@ func (t *TunTapImpl) Open(outputFormat PayloadFormat) error {
 
 	mediaStatus := int32(1)
 	bytesReturned := uint32(0)
-	err := syscall.DeviceIoControl(syscall.Handle(t.f.Fd()), _TAP_WIN_IOCTL_SET_MEDIA_STATUS, (*byte)(unsafe.Pointer(&mediaStatus)), uint32(unsafe.Sizeof(mediaStatus)), nil, 0, &bytesReturned, nil)
+	err := syscall.DeviceIoControl(syscall.Handle(t.f.Fd()), _TAP_WIN_IOCTL_SET_MEDIA_STATUS, (*byte)(unsafe.Pointer(&mediaStatus)), uint32(unsafe.Sizeof(mediaStatus)), (*byte)(unsafe.Pointer(&mediaStatus)), uint32(unsafe.Sizeof(mediaStatus)), &bytesReturned, nil)
 	if err != nil {
 		return os.NewSyscallError("DeviceIoControl (TAP_WIN_IOCTL_SET_MEDIA_STATUS)", err)
 	}
