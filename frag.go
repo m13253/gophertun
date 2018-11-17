@@ -54,7 +54,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 						return nil, nil
 					}
 				}
-				return nil, generateICMPPacketTooBig(p, packet)
+				return nil, generateICMPPacketTooBig(p, packet, mtu)
 			}
 			return fragmentIPv4Packet(p, packet, mtu), nil
 
@@ -98,7 +98,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 						return nil, nil
 					}
 				}
-				return nil, generateICMPPacketTooBig(p, frame)
+				return nil, generateICMPPacketTooBig(p, frame, mtu)
 			}
 			return fragmentIPv4Packet(p, packet, mtu), nil
 
@@ -122,7 +122,7 @@ func fragmentPacket(p *Packet, mtu int) (out []*Packet, reply []*Packet) {
 	}
 }
 
-func generateICMPPacketTooBig(p *Packet, c Codec) (reply []*Packet) {
+func generateICMPPacketTooBig(p *Packet, c Codec, mtu int) (reply []*Packet) {
 	switch p.Format {
 
 	case FormatIP:
@@ -138,8 +138,9 @@ func generateICMPPacketTooBig(p *Packet, c Codec) (reply []*Packet) {
 			Source:      cIPv4.Source,
 			Destination: cIPv4.Source,
 			Payload: &CodecICMP{
-				Type:    4,
-				Code:    0,
+				Type:    3,
+				Code:    4,
+				Omni:    uint32(mtu),
 				Payload: &CodecRaw{originalHeader, nil},
 			},
 		}
@@ -173,8 +174,9 @@ func generateICMPPacketTooBig(p *Packet, c Codec) (reply []*Packet) {
 				Source:      cIPv4.Source,
 				Destination: cIPv4.Source,
 				Payload: &CodecICMP{
-					Type:    4,
-					Code:    0,
+					Type:    3,
+					Code:    4,
+					Omni:    uint32(mtu),
 					Payload: &CodecRaw{originalHeader, nil},
 				},
 			},

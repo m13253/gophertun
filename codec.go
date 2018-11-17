@@ -135,7 +135,7 @@ type CodecICMP struct {
 	Type     uint8
 	Code     uint8
 	Checksum uint16
-	Reserved uint32
+	Omni     uint32
 	Payload  Codec
 }
 
@@ -700,7 +700,7 @@ func (c *CodecICMP) Decode(buf []byte) error {
 	if c.Checksum != 0 && checksum(buf[:8]) != 0 {
 		return errors.New("gophertun: ICMP checksum error")
 	}
-	c.Reserved = binary.BigEndian.Uint32(buf[4:8])
+	c.Omni = binary.BigEndian.Uint32(buf[4:8])
 	c.Payload = &CodecRaw{buf[8:], nil}
 	return nil
 }
@@ -714,7 +714,7 @@ func (c *CodecICMP) Encode() ([]byte, error) {
 	buf := make([]byte, 8+len(payload))
 	buf[0] = c.Type
 	buf[1] = c.Code
-	binary.BigEndian.PutUint32(buf[4:8], c.Reserved)
+	binary.BigEndian.PutUint32(buf[4:8], c.Omni)
 	copy(buf[8:], payload)
 
 	c.Checksum = checksum(buf)
@@ -728,7 +728,7 @@ func (c *CodecICMP) NextLayer() Codec {
 }
 
 func (c *CodecICMP) String() string {
-	return fmt.Sprintf("&CodecICMP{Type:%d, Code:%d, Csum:0x%04x, Rsvd:0x%08x, %v}", c.Type, c.Code, c.Checksum, c.Reserved, c.Payload)
+	return fmt.Sprintf("&CodecICMP{Type:%d, Code:%d, Csum:0x%04x, Rsvd:0x%08x, %v}", c.Type, c.Code, c.Checksum, c.Omni, c.Payload)
 }
 
 func (c *CodecICMPv6) Decode(buf []byte) error {
