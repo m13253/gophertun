@@ -57,6 +57,9 @@ func (c *TunTapConfig) findAllTunnels() ([]string, error) {
 		return nil, err
 	}
 	adapters, err := netprop.ReadSubKeyNames(0)
+	if err != nil {
+		return nil, err
+	}
 	results := make([]string, 0, len(adapters))
 	for _, i := range adapters {
 		if !adapterIDRegexp.MatchString(i) {
@@ -221,8 +224,5 @@ func (t *TunTapImpl) writeRaw(packet *Packet) (needFrag bool, err error) {
 		return false, nil
 	}
 	_, err = t.f.Write(packet.Payload)
-	if err != nil {
-		return false, err
-	}
-	return false, nil
+	return false, err
 }
